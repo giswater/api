@@ -138,13 +138,12 @@ class BasicService:
         )
         return await run_procedure(self.ctx, "gw_fct_getarcauditvalues", body)
 
-    async def get_list(
+    def _parse_list_query_params(
         self,
-        table_name: str,
         coordinates: Optional[str] = None,
         page_info: Optional[str] = None,
         filter_fields: Optional[str] = None,
-    ) -> dict:
+    ) -> tuple[Optional[dict], Optional[dict], Optional[dict]]:
         try:
             coordinates_data = None
             if coordinates:
@@ -166,6 +165,19 @@ class BasicService:
         except ValidationError as exc:
             raise InvalidParametersError(str(exc)) from exc
 
+        return coordinates_data, page_info_data, filter_fields_data
+
+    async def get_list(
+        self,
+        table_name: str,
+        coordinates: Optional[str] = None,
+        page_info: Optional[str] = None,
+        filter_fields: Optional[str] = None,
+    ) -> dict:
+        coordinates_data, page_info_data, filter_fields_data = self._parse_list_query_params(
+            coordinates, page_info, filter_fields
+        )
+
         data = {"tableName": table_name}
         if coordinates:
             data["canvasExtend"] = coordinates_data
@@ -177,3 +189,29 @@ class BasicService:
             cur_user=self.ctx.user_id,
         )
         return await run_procedure(self.ctx, "gw_fct_getlist", body)
+
+    async def get_features(
+        self,
+        table_name: str,
+        coordinates: Optional[str] = None,
+        page_info: Optional[str] = None,
+        filter_fields: Optional[str] = None,
+        output_format: Literal["geojson"] = "geojson",
+    ) -> dict:
+        coordinates_data, page_info_data, filter_fields_data = self._parse_list_query_params(
+            coordinates, page_info, filter_fields
+        )
+
+        data = {"tableName": table_name, "outputFormat": output_format}
+        if coordinates:
+            data["canvasExtend"] = coordinates_data
+
+        body = create_body_dict(
+            device=self.ctx.device,
+            lang=self.ctx.lang,
+            extras=data,
+            filter_fields=filter_fields_data if filter_fields_data else {},
+            page_info=page_info_data if page_info_data else {},
+            cur_user=self.ctx.user_id,
+        )
+        return await run_procedure(self.ctx, "gw_fct_getfeatures", body)

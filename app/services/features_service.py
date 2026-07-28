@@ -51,3 +51,17 @@ class FeaturesService:
             cur_user=self.ctx.user_id,
         )
         return await run_procedure(self.ctx, "gw_fct_getinfofromid", body)
+
+    async def get_features_geojson(
+        self,
+        feature_type: FeatureType,
+        coordinates: Optional[str] = None,
+        page_info: Optional[str] = None,
+        filter_fields: Optional[str] = None,
+    ) -> dict:
+        return await self._basic.get_features(
+            get_feature_table(feature_type),
+            coordinates=coordinates,
+            page_info=page_info,
+            filter_fields=filter_fields,
+        )
