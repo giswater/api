@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Drop session-level SET ROLE before the connection goes back into the pool.
+
 ## [1.6.0] - 2026-06-22
 
 ### Added
