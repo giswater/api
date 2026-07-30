@@ -72,4 +72,5 @@ jobs:
           API_ROUTING: true
           API_CRM: true
           API_EPA: true
+          API_FEATURES: true
         run: pytest -v -m "not ${{ matrix.skip_marker }}"

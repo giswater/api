@@ -7,36 +7,115 @@ or (at your option) any later version.
 
 from __future__ import annotations
 
-from typing import Optional
+import json
+from typing import Literal, Optional
 
+from pydantic import ValidationError
+
+from app.core.exceptions import InvalidParametersError
+from app.schemas.common import ExtentModel
 from app.schemas.features.feature_models import (
+    FeatureFilters,
     FeatureType,
     get_feature_id_column,
     get_feature_table,
+    get_feature_type_param,
 )
-from app.services.basic_service import BasicService
 from app.services.context import ServiceContext
 from app.services.procedure import run_procedure
 from app.utils.body import create_body_dict
+
+# gw_fct_getfeatures only applies LIMIT when device != 4 (QGIS Desktop).
+_FEATURES_DEVICE_FALLBACK = 5
+_DEFAULT_LIMIT = 500
 
 
 class FeaturesService:
     def __init__(self, ctx: ServiceContext):
         self.ctx = ctx.with_logger(__name__)
-        self._basic = BasicService(self.ctx)
 
-    async def get_features(
+    def _effective_device(self) -> int:
+        return self.ctx.device if self.ctx.device != 4 else _FEATURES_DEVICE_FALLBACK
+
+    def _parse_coordinates(self, coordinates: Optional[str]) -> Optional[dict]:
+        if not coordinates:
+            return None
+        try:
+            return ExtentModel(**json.loads(coordinates)).model_dump(mode="json", exclude_unset=True)
+        except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+            raise InvalidParametersError(str(exc)) from exc
+
+    async def _list_features(
         self,
         feature_type: FeatureType,
+        output_format: Literal["list", "geojson"],
+        filters: FeatureFilters,
         coordinates: Optional[str] = None,
-        page_info: Optional[str] = None,
-        filter_fields: Optional[str] = None,
+        order_by: Optional[str] = None,
+        order_type: Optional[Literal["ASC", "DESC"]] = None,
+        limit: int = _DEFAULT_LIMIT,
     ) -> dict:
-        return await self._basic.get_list(
-            get_feature_table(feature_type),
-            coordinates=coordinates,
-            page_info=page_info,
+        coordinates_data = self._parse_coordinates(coordinates)
+        filter_fields = filters.to_filter_fields()
+
+        page_info: dict = {"limit": limit}
+        if order_by:
+            page_info["orderBy"] = order_by
+            page_info["orderType"] = order_type or "ASC"
+
+        extras: dict = {
+            "featureType": get_feature_type_param(feature_type),
+            "outputFormat": output_format,
+        }
+        if coordinates_data is not None:
+            extras["canvasExtend"] = coordinates_data
+
+        body = create_body_dict(
+            device=self._effective_device(),
+            lang=self.ctx.lang,
+            extras=extras,
             filter_fields=filter_fields,
+            page_info=page_info,
+            cur_user=self.ctx.user_id,
+        )
+        return await run_procedure(self.ctx, "gw_fct_getfeatures", body)
+
+    async def list_features(
+        self,
+        feature_type: FeatureType,
+        filters: FeatureFilters,
+        coordinates: Optional[str] = None,
+        order_by: Optional[str] = None,
+        order_type: Optional[Literal["ASC", "DESC"]] = None,
+        limit: int = _DEFAULT_LIMIT,
+    ) -> dict:
+        return await self._list_features(
+            feature_type,
+            "list",
+            filters,
+            coordinates=coordinates,
+            order_by=order_by,
+            order_type=order_type,
+            limit=limit,
+        )
+
+    async def list_features_geojson(
+        self,
+        feature_type: FeatureType,
+        filters: FeatureFilters,
+        coordinates: Optional[str] = None,
+        order_by: Optional[str] = None,
+        order_type: Optional[Literal["ASC", "DESC"]] = None,
+        limit: int = _DEFAULT_LIMIT,
+    ) -> dict:
+        return await self._list_features(
+            feature_type,
+            "geojson",
+            filters,
+            coordinates=coordinates,
+            order_by=order_by,
+            order_type=order_type,
+            limit=limit,
         )
 
     async def get_feature(self, feature_type: FeatureType, feature_id: str) -> dict:
@@ -51,17 +130,3 @@ class FeaturesService:
             cur_user=self.ctx.user_id,
         )
         return await run_procedure(self.ctx, "gw_fct_getinfofromid", body)
-
-    async def get_features_geojson(
-        self,
-        feature_type: FeatureType,
-        coordinates: Optional[str] = None,
-        page_info: Optional[str] = None,
-        filter_fields: Optional[str] = None,
-    ) -> dict:
-        return await self._basic.get_features(
-            get_feature_table(feature_type),
-            coordinates=coordinates,
-            page_info=page_info,
-            filter_fields=filter_fields,
-        )

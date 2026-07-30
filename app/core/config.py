@@ -140,7 +140,7 @@ class GlobalSettings:
 
     # DB compatibility (optional readiness gate; see GISWATER_DB_* env vars)
     giswater_db_version_check: bool = False
-    giswater_db_min_version: str = "4.8.0"
+    giswater_db_min_version: str = "4.17.0"
 
     # Alembic migrations for the API-owned `gwapi` schema.
     # When True, `alembic upgrade head` runs per tenant on load. Set False to
@@ -280,7 +280,7 @@ def _build_global(env: Mapping[str, str | None]) -> GlobalSettings:
         platform_keycloak_client_id=env.get("PLATFORM_KEYCLOAK_CLIENT_ID") or None,
         platform_keycloak_client_secret=env.get("PLATFORM_KEYCLOAK_CLIENT_SECRET") or None,
         giswater_db_version_check=_to_bool(env.get("GISWATER_DB_VERSION_CHECK"), False),
-        giswater_db_min_version=(env.get("GISWATER_DB_MIN_VERSION") or "4.8.0"),
+        giswater_db_min_version=(env.get("GISWATER_DB_MIN_VERSION") or "4.17.0"),
         db_auto_migrate=_to_bool(env.get("DB_AUTO_MIGRATE"), True),
         db_migrate_timeout=_to_float(env.get("DB_MIGRATE_TIMEOUT"), 30.0),
     )

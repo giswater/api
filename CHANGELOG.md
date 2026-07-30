@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`/features` endpoints**: both json and geojson responses.
+- **`/features` endpoints**: typed filters for nodes/arcs/links/connecs/gullies (list + GeoJSON + by-id), gated by `API_FEATURES`.
+
+### Changed
+
+- **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.0** (refactored `gw_fct_getfeatures` with `featureType` / `outputFormat`).
+
+### Deprecated
+
+- **`GET /om/dmas/{dma_id}/connecs`**: prefer `GET /features/connecs?dma_id={dma_id}`.
 
 ## [1.6.0] - 2026-06-22
 

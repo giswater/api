@@ -46,7 +46,7 @@ def _materialize_tenants_dir() -> str:
     (tmp / "test.env").write_text(
         "API_BASIC=true\nAPI_PROFILE=true\nAPI_FLOW=true\nAPI_MINCUT=true\n"
         "API_WATER_BALANCE=true\nAPI_MAPZONES=true\nAPI_ROUTING=true\n"
-        "API_CRM=true\nAPI_EPA=true\n"
+        "API_CRM=true\nAPI_EPA=true\nAPI_FEATURES=true\n"
         f"DB_HOST={db_host}\nDB_PORT={db_port}\nDB_NAME={db_name}\n"
         f"DB_USER={db_user}\nDB_PASSWORD={db_password}\nDB_SCHEMA=public\n"
         f'DATABASE_URL="{db_url}"\n'

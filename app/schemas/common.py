@@ -319,9 +319,11 @@ class PageInfoReturnModel(BaseModel):
 
 
 class FilterFieldModel(BaseModel):
-    """Filter field model"""
+    """Filter field model.
 
-    value: Any = Field(..., description="Value")
-    filterSign: Literal["=", ">", "<", ">=", "<=", "LIKE", "ILIKE", "BETWEEN", "IN"] = Field(
-        "=", description="Filter sign"
-    )
+    ``filterSign=IN`` expects ``value`` to be a JSON array (e.g. ``["A","B"]``).
+    ``BETWEEN`` is not supported by ``gw_fct_build_filters_sql`` via this model.
+    """
+
+    value: Any = Field(..., description="Value (array when filterSign is IN)")
+    filterSign: Literal["=", ">", "<", ">=", "<=", "LIKE", "ILIKE", "IN"] = Field("=", description="Filter sign")
