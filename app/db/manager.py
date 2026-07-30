@@ -7,7 +7,7 @@ or (at your option) any later version.
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from psycopg_pool import AsyncConnectionPool
 import psycopg
 from fastapi import HTTPException
@@ -44,6 +44,11 @@ class DatabaseManager:
     def _log_prefix(self) -> str:
         return f"[{self.tenant_id}]"
 
+    @staticmethod
+    async def _reset_pooled_connection(conn):
+        """Drop session-level SET ROLE before the connection goes back into the pool."""
+        await conn.execute("RESET ROLE")
+
     async def init_conn_pool(self):
         """Initialize the async connection pool."""
         try:
@@ -54,6 +59,7 @@ class DatabaseManager:
                 timeout=self.settings.db_pool_timeout,
                 max_waiting=self.settings.db_pool_max_waiting,
                 max_idle=self.settings.db_pool_max_idle,
+                reset=self._reset_pooled_connection,
                 open=False,
             )
             await asyncio.wait_for(self.connection_pool.open(), timeout=self.settings.db_connect_timeout)
@@ -72,41 +78,47 @@ class DatabaseManager:
 
         Yields:
             psycopg connection or None if connection fails
+
+        Only connection *acquisition* is retried. Errors raised by the caller after
+        the connection is yielded propagate unchanged (no pool recreate / re-yield).
         """
         max_tries = 3
         retry_delay_seconds = 2
 
-        for n_try in range(max_tries):
-            if self.connection_pool is None:
-                await self.init_conn_pool()
+        async with AsyncExitStack() as stack:
+            for n_try in range(max_tries):
                 if self.connection_pool is None:
+                    await self.init_conn_pool()
+                    if self.connection_pool is None:
+                        if n_try < max_tries - 1:
+                            await asyncio.sleep(retry_delay_seconds)
+                        continue
+
+                try:
+                    conn = await stack.enter_async_context(self.connection_pool.connection())
+                    break
+                except (psycopg.Error, OSError, asyncio.TimeoutError) as e:
+                    logger.warning(
+                        "%s Failed to acquire database connection (attempt %s/%s): %s",
+                        self._log_prefix(),
+                        n_try + 1,
+                        max_tries,
+                        e,
+                    )
+                    # Pool may be stale after DB restarts/outages; force recreation.
+                    try:
+                        if self.connection_pool is not None:
+                            await self.connection_pool.close()
+                    except OSError:
+                        logger.debug("%s Error closing stale pool", self._log_prefix(), exc_info=True)
+                    self.connection_pool = None
                     if n_try < max_tries - 1:
                         await asyncio.sleep(retry_delay_seconds)
-                    continue
+            else:
+                yield None
+                return
 
-            try:
-                async with self.connection_pool.connection() as conn:
-                    yield conn
-                    return
-            except (psycopg.Error, OSError, asyncio.TimeoutError) as e:
-                logger.warning(
-                    "%s Failed to acquire database connection (attempt %s/%s): %s",
-                    self._log_prefix(),
-                    n_try + 1,
-                    max_tries,
-                    e,
-                )
-                # Pool may be stale after DB restarts/outages; force recreation.
-                try:
-                    if self.connection_pool is not None:
-                        await self.connection_pool.close()
-                except OSError:
-                    logger.debug("%s Error closing stale pool", self._log_prefix(), exc_info=True)
-                self.connection_pool = None
-                if n_try < max_tries - 1:
-                    await asyncio.sleep(retry_delay_seconds)
-
-        yield None
+            yield conn
 
     async def validate_schema(self, schema: str) -> bool:
         """Validate if a schema exists in the database."""
