@@ -50,6 +50,7 @@ def test_reset_pooled_connection_runs_reset_role():
         conn = AsyncMock()
         await DatabaseManager._reset_pooled_connection(conn)
         conn.execute.assert_awaited_once_with("RESET ROLE")
+        conn.commit.assert_awaited_once_with()
 
     asyncio.run(_run())
 
@@ -167,6 +168,7 @@ def test_pool_reset_clears_set_role_between_checkouts():
                 async with db.get_db() as conn:
                     if conn is not None:
                         async with conn.cursor() as cur:
+                            await cur.execute("RESET ROLE")
                             await cur.execute(f"DROP ROLE IF EXISTS {role}")
                         await conn.commit()
             finally:

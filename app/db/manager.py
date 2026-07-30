@@ -46,8 +46,13 @@ class DatabaseManager:
 
     @staticmethod
     async def _reset_pooled_connection(conn):
-        """Drop session-level SET ROLE before the connection goes back into the pool."""
+        """Drop session-level SET ROLE before the connection goes back into the pool.
+
+        Pool guarantees IDLE on entry; we must leave IDLE too or the conn is discarded.
+        SET/RESET inside a txn are undone by ROLLBACK, so COMMIT the RESET ROLE.
+        """
         await conn.execute("RESET ROLE")
+        await conn.commit()
 
     async def init_conn_pool(self):
         """Initialize the async connection pool."""
