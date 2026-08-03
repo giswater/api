@@ -25,6 +25,7 @@ from app.db.schema import (
     DB_LOG_TABLE,
     GWAPI_SCHEMA,
     HTTP_LOG_TABLE,
+    JOBS_TABLE,
     LEGACY_DB_LOG_TABLE,
     LEGACY_HTTP_LOG_TABLE,
     LEGACY_LOG_SCHEMA,
@@ -150,6 +151,7 @@ def test_alembic_fresh_install():
             assert await _table_exists(db, GWAPI_SCHEMA, HTTP_LOG_TABLE)
             assert await _table_exists(db, GWAPI_SCHEMA, DB_LOG_TABLE)
             assert await _table_exists(db, GWAPI_SCHEMA, "users")
+            assert await _table_exists(db, GWAPI_SCHEMA, JOBS_TABLE)
             assert not await _table_exists(db, LEGACY_LOG_SCHEMA, LEGACY_HTTP_LOG_TABLE)
             assert await get_current_revision(db.database_url) == head_revision()
             targets = await resolve_log_targets(db)
@@ -185,6 +187,7 @@ def test_alembic_relocate_log_schema():
 
             assert await _table_exists(db, GWAPI_SCHEMA, HTTP_LOG_TABLE)
             assert await _table_exists(db, GWAPI_SCHEMA, DB_LOG_TABLE)
+            assert await _table_exists(db, GWAPI_SCHEMA, JOBS_TABLE)
             assert not await _table_exists(db, GWAPI_SCHEMA, LEGACY_HTTP_LOG_TABLE)
             assert not await _table_exists(db, LEGACY_LOG_SCHEMA, LEGACY_HTTP_LOG_TABLE)
             assert await _table_exists(db, GWAPI_SCHEMA, f"{HTTP_LOG_TABLE}_2026_06")

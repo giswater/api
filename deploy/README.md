@@ -82,4 +82,6 @@ cd /opt/giswater-api
 docker compose pull && docker compose up -d
 ```
 
+Production Compose runs `app`, `redis`, `celery-worker`, and `celery-beat`. Set `CELERY_BROKER_URL=redis://redis:6379/0` in `.env` (default in compose).
+
 See also [docs/DEPLOYMENT_CHECKLIST.md](../docs/DEPLOYMENT_CHECKLIST.md) and [docs/ENVIRONMENT_VARIABLES.md](../docs/ENVIRONMENT_VARIABLES.md).

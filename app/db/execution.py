@@ -56,6 +56,108 @@ def create_response(db_result=None, form_xml=None, status=None, message=None):
     return response
 
 
+async def _execute_procedure_on_conn(  # noqa: C901
+    conn,
+    *,
+    log,
+    db_manager,
+    function_name,
+    query,
+    sql_params: tuple[Any, ...],
+    schema_name: str,
+    set_role: bool,
+    user: str | None,
+    db_role: str | None,
+    api_version,
+    start_time: float,
+) -> dict:
+    sql_preview = (
+        sql.SQL("SELECT {}.{}({})")
+        .format(
+            sql.Identifier(schema_name),
+            sql.Identifier(function_name),
+            sql.SQL(", ").join(sql.Literal(p) for p in sql_params),
+        )
+        .as_string(conn)
+    )
+    result: dict | Any = {}
+    log.debug("execute_procedure SQL: %s", sql_preview)
+    identity = _resolve_db_identity(user, db_role)
+    db_error = None
+    response_msg = ""
+    try:
+        async with conn.cursor() as cursor:
+            if set_role and identity:
+                await cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(identity)))
+            if sql_params:
+                await cursor.execute(query, sql_params)
+            else:
+                await cursor.execute(query)
+            row = await cursor.fetchone()
+            result = row[0] if row else None
+            await conn.commit()
+        response_msg = json.dumps(result)
+    except psycopg.Error as e:
+        await conn.rollback()
+        db_error = str(e)
+        db_version = None
+        if result and isinstance(result, dict) and "version" in result:
+            db_version = result["version"]
+        result = {
+            "status": "Failed",
+            "message": {"level": 3, "text": str(e)},
+            "version": {"api": api_version},
+            "body": {},
+        }
+        if db_version:
+            result["version"]["db"] = db_version
+        response_msg = str(e)
+    except Exception as e:
+        logger.exception("Non-DB error in execute_procedure")
+        await conn.rollback()
+        db_error = str(e)
+        result = {
+            "status": "Failed",
+            "message": {"level": 3, "text": str(e)},
+            "version": {"api": api_version},
+            "body": {},
+        }
+        response_msg = str(e)
+
+    if not result or (isinstance(result, dict) and result.get("status") == "Failed"):
+        log.warning(f"{sql_preview}|||{response_msg}")
+    else:
+        log.info(f"{sql_preview}|||{response_msg}")
+
+    if result:
+        log.debug("execute_procedure response: %s", json.dumps(result, default=str))
+
+    if isinstance(result, dict) and "version" in result:
+        result["version"] = {"db": result["version"], "api": api_version}
+
+    if global_settings.log_db_enabled:
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        request_id = REQUEST_ID_CTX.get()
+        cap = global_settings.log_db_response_max_bytes
+        stored_response = response_msg
+        if cap > 0 and stored_response is not None and len(stored_response) > cap:
+            stored_response = stored_response[:cap] + "...[truncated]"
+        db_log_record = {
+            "ts": datetime.now(timezone.utc),
+            "request_id": request_id,
+            "schema_name": schema_name,
+            "function_name": function_name,
+            "sql_text": sql_preview,
+            "response_json": stored_response,
+            "duration_ms": duration_ms,
+            "status": result.get("status") if isinstance(result, dict) else None,
+            "error": db_error,
+        }
+        asyncio.create_task(insert_api_db_log(db_manager, db_log_record))
+
+    return result
+
+
 async def execute_procedure(  # noqa: C901
     log,
     db_manager,
@@ -67,6 +169,7 @@ async def execute_procedure(  # noqa: C901
     user: str | None = "anonymous",
     db_role: str | None = None,
     api_version=None,
+    conn=None,
 ):
     """
     Manage execution of database function.
@@ -80,6 +183,7 @@ async def execute_procedure(  # noqa: C901
         schema: Database schema to use (defaults to db_manager's default_schema)
         user: Current user (from JWT or config)
         api_version: API version string
+        conn: Optional database connection to use
 
     Returns:
         Response of the function executed (json)
@@ -105,100 +209,30 @@ async def execute_procedure(  # noqa: C901
         sql.Identifier(function_name),
         sql.SQL(", ").join(sql.Placeholder() for _ in sql_params),
     )
-    response_msg = ""
 
     start_time = time.monotonic()
-    async with db_manager.get_db() as conn:
-        if conn is None:
+    kwargs = dict(
+        log=log,
+        db_manager=db_manager,
+        function_name=function_name,
+        query=query,
+        sql_params=sql_params,
+        schema_name=schema_name,
+        set_role=set_role,
+        user=user,
+        db_role=db_role,
+        api_version=api_version,
+        start_time=start_time,
+    )
+
+    if conn is not None:
+        return await _execute_procedure_on_conn(conn, **kwargs)
+
+    async with db_manager.get_db() as acquired:
+        if acquired is None:
             log.error("No connection to database")
             raise DatabaseUnavailableError()
-        # Full SQL with inlined args, for logging only; execution still uses placeholders.
-        sql_preview = (
-            sql.SQL("SELECT {}.{}({})")
-            .format(
-                sql.Identifier(schema_name),
-                sql.Identifier(function_name),
-                sql.SQL(", ").join(sql.Literal(p) for p in sql_params),
-            )
-            .as_string(conn)
-        )
-        result = dict()
-        log.debug("execute_procedure SQL: %s", sql_preview)
-        identity = _resolve_db_identity(user, db_role)
-        db_error = None
-        try:
-            async with conn.cursor() as cursor:
-                if set_role and identity:
-                    await cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(identity)))
-                if sql_params:
-                    await cursor.execute(query, sql_params)
-                else:
-                    await cursor.execute(query)
-                result = await cursor.fetchone()
-                result = result[0] if result else None
-                # Manual commit after successful execution
-                await conn.commit()
-            response_msg = json.dumps(result)
-        except psycopg.Error as e:
-            # Rollback on error
-            await conn.rollback()
-            db_error = str(e)
-            db_version = None
-            if result and "version" in result:
-                db_version = result["version"]
-            result = {
-                "status": "Failed",
-                "message": {"level": 3, "text": str(e)},
-                "version": {"api": api_version},
-                "body": {},
-            }
-            if db_version:
-                result["version"]["db"] = db_version
-            response_msg = str(e)
-        except Exception as e:
-            logger.exception("Non-DB error in execute_procedure")
-            await conn.rollback()
-            db_error = str(e)
-            result = {
-                "status": "Failed",
-                "message": {"level": 3, "text": str(e)},
-                "version": {"api": api_version},
-                "body": {},
-            }
-            response_msg = str(e)
-
-        if not result or result.get("status") == "Failed":
-            log.warning(f"{sql_preview}|||{response_msg}")
-        else:
-            log.info(f"{sql_preview}|||{response_msg}")
-
-        if result:
-            log.debug("execute_procedure response: %s", json.dumps(result, default=str))
-
-        if result and "version" in result:
-            result["version"] = {"db": result["version"], "api": api_version}
-
-        if global_settings.log_db_enabled:
-            duration_ms = int((time.monotonic() - start_time) * 1000)
-            request_id = REQUEST_ID_CTX.get()
-            cap = global_settings.log_db_response_max_bytes
-            stored_response = response_msg
-            if cap > 0 and stored_response is not None and len(stored_response) > cap:
-                stored_response = stored_response[:cap] + "...[truncated]"
-            db_log_record = {
-                "ts": datetime.now(timezone.utc),
-                "request_id": request_id,
-                "schema_name": schema_name,
-                "function_name": function_name,
-                "sql_text": sql_preview,
-                "response_json": stored_response,
-                "duration_ms": duration_ms,
-                "status": result.get("status") if isinstance(result, dict) else None,
-                "error": db_error,
-            }
-            asyncio.create_task(insert_api_db_log(db_manager, db_log_record))
-
-        return result
+        return await _execute_procedure_on_conn(acquired, **kwargs)
 
 
 async def execute_sql_select(

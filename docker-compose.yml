@@ -19,8 +19,12 @@ services:
     image: giswater-api:latest
     env_file:
       - .env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    depends_on:
+      - redis
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8000"
     volumes:
       - ./config:/app/config:Z
       - giswater_api_logs:/app/logs
@@ -32,20 +36,76 @@ services:
     restart: unless-stopped
     healthcheck:
       # Uses API_ROOT from .env (default /giswater); override in compose env if you change API_ROOT.
-      test: ["CMD", "python", "-c", "import os,urllib.request,sys; root=(os.environ.get('API_ROOT') or '/giswater').rstrip('/'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:8000{root}/health', timeout=2).status==200 else 1)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request,sys; root=(os.environ.get('API_ROOT') or '/giswater').rstrip('/'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:8001{root}/health', timeout=2).status==200 else 1)",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
     networks:
       api-network:
-        ipv4_address: 172.21.1.50
+        ipv4_address: 172.21.2.50
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+    networks:
+      api-network:
+        ipv4_address: 172.21.2.52
+
+  celery-worker:
+    build: .
+    image: giswater-api:latest
+    command: ["celery", "-A", "app.celery_app", "worker", "-Q", "giswater.jobs", "-l", "info"]
+    env_file:
+      - .env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    depends_on:
+      - redis
+    volumes:
+      - ./config:/app/config:Z
+      - giswater_api_logs:/app/logs
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      api-network:
+        ipv4_address: 172.21.2.51
+
+  celery-beat:
+    build: .
+    image: giswater-api:latest
+    command: ["celery", "-A", "app.celery_app", "beat", "-l", "info"]
+    env_file:
+      - .env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    depends_on:
+      - redis
+    volumes:
+      - ./config:/app/config:Z
+      - giswater_api_logs:/app/logs
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      api-network:
+        ipv4_address: 172.21.2.53
 
 networks:
   api-network:
     ipam:
       config:
-        - subnet: 172.21.1.0/24
+        - subnet: 172.21.2.0/24
 
 volumes:
   giswater_api_logs:

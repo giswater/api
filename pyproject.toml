@@ -19,6 +19,9 @@ dependencies = [
     "fastapi-keycloak==1.1.1",
     "python-dotenv==1.2.2",
     "click==8.2.1",
+    "python-multipart==0.0.24",
+    "celery>=5.4.0",
+    "redis>=5.0.0",
 ]
 
 [project.scripts]

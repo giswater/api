@@ -15,7 +15,7 @@ from app.services.context import ServiceContext
 from app.utils.body import ensure_procedure_accepted
 
 
-async def run_procedure(ctx: ServiceContext, function_name: str, body: str) -> dict:
+async def run_procedure(ctx: ServiceContext, function_name: str, body: str, conn=None) -> dict:
     log = ctx.logger or logging.getLogger(__name__)
     result = await execute_procedure(
         log,
@@ -26,11 +26,12 @@ async def run_procedure(ctx: ServiceContext, function_name: str, body: str) -> d
         api_version=ctx.api_version,
         user=ctx.user_id,
         db_role=ctx.db_role,
+        conn=conn,
     )
     return ensure_procedure_accepted(result)
 
 
-async def run_procedure_raw(ctx: ServiceContext, function_name: str, body: str) -> dict | None:
+async def run_procedure_raw(ctx: ServiceContext, function_name: str, body: str, conn=None) -> dict | None:
     """Call a procedure without enforcing Accepted status (e.g. feature changes empty result)."""
     log = ctx.logger or logging.getLogger(__name__)
     return await execute_procedure(
@@ -42,6 +43,7 @@ async def run_procedure_raw(ctx: ServiceContext, function_name: str, body: str) 
         api_version=ctx.api_version,
         user=ctx.user_id,
         db_role=ctx.db_role,
+        conn=conn,
     )
 
 

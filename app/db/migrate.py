@@ -114,13 +114,11 @@ async def ensure_tenant_database(db_manager, settings: TenantSettings) -> None:
 
     Replaces the old runtime DDL bootstrap. Runs Alembic (unless disabled),
     ensures the current-month log partitions, and bootstraps the first basic-auth
-    user. Migration failures are non-fatal: the legacy schema resolver keeps the
+    user. Always runs when the tenant has a DB pool so ``gwapi.jobs`` (and other
+    API-owned tables) exist regardless of auth mode or audit logging.
+    Migration failures are non-fatal: the legacy schema resolver keeps the
     API serving against `log.*` until the issue is resolved.
     """
-    needs_db = global_settings.log_db_enabled or settings.auth_mode == "basic"
-    if not needs_db:
-        return
-
     if global_settings.db_auto_migrate:
         try:
             await run_alembic_upgrade(db_manager)

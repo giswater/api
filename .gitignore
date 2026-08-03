@@ -33,3 +33,12 @@ Pipfile.lock
 # MacOS & Linux system files
 .DS_Store
 .idea/
+
+# Plugins
+/plugins/
+!plugins/readme.md
+
+# Celery Beat local schedule DB
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal

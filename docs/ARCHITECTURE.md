@@ -14,11 +14,11 @@ conventions and the [full-stack template](https://github.com/fastapi/full-stack-
 app/
   main.py                 # lifespan, the three FastAPI sub-apps, mounts, middleware + handler registration
   api/                    # HTTP layer (uses absolute `from app...` imports)
-    deps.py               # CommonsDep, get_service_context, get_schema, require_feature
+    deps.py               # CommonsDep, TenantUserDep, get_service_context, get_schema, require_feature, register_plugin_router
     exception_handlers.py # register_exception_handlers
     v1/
       router.py           # ROUTER_FEATURES wiring + per-tenant OpenAPI filter
-      endpoints/          # thin route handlers; delegate to services/
+      endpoints/          # thin route handlers; delegate to services/ (includes jobs.py)
     admin/
       router.py           # aggregates the admin sub-app routers
       tenants.py          # tenant lifecycle endpoints
@@ -56,13 +56,16 @@ app/
     schema.py             # gwapi schema/table constants + resolve_log_targets (legacy log fallback)
     partitions.py         # monthly partition DDL (runtime-managed)
     migrate.py            # Alembic runner + ensure_tenant_database orchestrator
+  jobs/                   # background job framework (repository, service, handlers)
+  celery_app.py           # Celery app + broker config
+  tasks/                  # Celery tasks (execute_job, reconcile_stale_jobs, runtime)
   tenancy/
     registry.py           # Tenant + TenantRegistry
     state.py              # process-global registry / global_logger
     host_middleware.py    # Host header -> tenant resolution
   middleware/
     request_logging.py    # HTTP request logging middleware
-  schemas/                # Pydantic request/response models (basic/ crm/ om/ routing/ epa/, admin.py, common.py)
+  schemas/                # Pydantic request/response models (basic/ crm/ om/ routing/ epa/, admin.py, jobs.py, common.py)
   utils/                  # dependency-light helpers (no DB imports)
     body.py               # create_body_dict, create_api_response, handle_procedure_result
     version.py            # pure version string comparison
@@ -107,6 +110,7 @@ Rules that keep this acyclic:
 | Procedure/body execution | `app/services/procedure.py`, `app/utils/body.py` |
 | DB function calls / raw SQL | `app/db/execution.py` |
 | Schema migrations (`gwapi`) | `alembic/` (revisions) + `app/db/migrate.py` (runner); see [DATABASE_MIGRATIONS.md](DATABASE_MIGRATIONS.md) |
+| Background jobs | `app/jobs/`, `app/celery_app.py`, `app/tasks/`; table `gwapi.jobs` via Alembic |
 | Configuration / env vars | `app/core/config.py` (+ `docs/ENVIRONMENT_VARIABLES.md`) |
 | Auth modes / roles | `app/auth/` |
 | Pure helpers (no DB) | `app/utils/` |

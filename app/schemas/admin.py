@@ -95,6 +95,7 @@ class AuthSettingsOut(BaseModel):
 
 class TenantIn(BaseModel):
     api: dict[str, bool] = Field(default_factory=dict)
+    plugins: Optional[list[str]] = None
     db: DbSettingsIn
     auth: Optional[AuthSettingsIn] = None
     keycloak: Optional[KeycloakSettingsIn] = None  # DEPRECATED #22: use auth.keycloak
@@ -113,6 +114,7 @@ class PoolStatus(BaseModel):
 class TenantOut(BaseModel):
     id: str
     api: dict[str, bool]
+    plugins: list[str]
     db: DbSettingsOut
     auth: AuthSettingsOut
     keycloak: Optional[KeycloakSettingsOut] = None  # DEPRECATED #22: use auth.keycloak
@@ -182,6 +184,7 @@ class TenantOut(BaseModel):
         return cls(
             id=tenant.id,
             api=api,
+            plugins=sorted(s.enabled_plugins),
             db=db,
             auth=auth,
             keycloak=keycloak_out,  # DEPRECATED #22: duplicate of auth.keycloak; remove in 2.0.0
@@ -204,6 +207,11 @@ def build_tenant_settings_from_input(
         if name in api:
             return bool(api[name])
         return bool(getattr(existing, f"api_{name}", False)) if existing else False
+
+    def _plugins() -> frozenset[str]:
+        if payload.plugins is not None:
+            return frozenset(p.strip() for p in payload.plugins if p.strip())
+        return existing.enabled_plugins if existing else frozenset()
 
     db = payload.db
     auth = payload.auth
@@ -238,6 +246,7 @@ def build_tenant_settings_from_input(
         api_routing=_api("routing"),
         api_crm=_api("crm"),
         api_epa=_api("epa"),
+        enabled_plugins=_plugins(),
         db_host=db.host,
         db_port=db.port,
         db_name=db.name,

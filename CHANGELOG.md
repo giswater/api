@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Celery + Redis** background job transport: `app/celery_app.py`, `app/tasks/` (`execute_job`, `reconcile_stale_jobs`, worker runtime). Postgres (`gwapi.jobs`) remains the source of truth; Redis is broker-only.
+- **Alembic revision `0002_gwapi_jobs`**: creates `gwapi.jobs` (progress column, indexes) as part of the API-owned schema.
+- Job progress reporting (`app/jobs/progress.py`) and worker Keycloak auth (`app/jobs/worker_auth.py`, per-tenant `WORKER_KEYCLOAK_*`).
+- Docker Compose services: `redis`, `celery-worker`, `celery-beat` (dev and production `deploy/docker-compose.yml`).
+- Tests: `test_jobs_execute_task`, `test_jobs_reconcile`, `test_jobs_registry`.
+
+### Changed
+
+- **Breaking:** run jobs with `celery -A app.celery_app worker -Q giswater.jobs` (polling worker removed earlier).
+- `ensure_tenant_database` always runs Alembic when the tenant has a DB pool (jobs need `gwapi.jobs` regardless of auth mode / logging).
+- `JobService.create_job` enqueues Celery tasks after DB insert.
+- Job HTTP DTOs live in `app/schemas/jobs.py`; domain models stay in `app/jobs/models.py`.
+
+### Removed
+
+- Env vars `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_CONCURRENT_JOBS`.
+
 ## [1.6.2] - 2026-07-30
 
 ### Fixed
