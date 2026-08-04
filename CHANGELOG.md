@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`GET /om/dmas/{dma_id}/connecs`**: prefer `GET /features/connecs?dma_id={dma_id}`.
 
+## [1.6.2] - 2026-07-30
+
+### Fixed
+
+- Commit after SET ROLE to fix connection pooling.
+
+## [1.6.1] - 2026-07-30
+
+### Fixed
+
+- Drop session-level SET ROLE before the connection goes back into the pool.
+
 ## [1.6.0] - 2026-06-22
 
 ### Added
