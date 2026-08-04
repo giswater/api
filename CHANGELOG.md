@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Swagger OAuth2 support.
+
 ## [1.6.2] - 2026-07-30
 
 ### Fixed
