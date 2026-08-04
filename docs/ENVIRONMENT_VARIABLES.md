@@ -196,6 +196,7 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 ## See also
 
 - [`.env.example`](../.env.example) — copy-paste root defaults
+- [API request examples](API_REQUESTS.md) — curl/httpx for `none` / `basic` / `keycloak` + admin
 - [Deployment checklist](DEPLOYMENT_CHECKLIST.md)
 - [README – Configuration](../README.md#configuration)
 - [README – Compatibility](../README.md#compatibility)

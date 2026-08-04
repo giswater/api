@@ -17,6 +17,7 @@ A lightweight, modular FastAPI application with **Swagger UI**, **Docker support
 - [Configuration](#configuration)
 - [Environment variables reference](docs/ENVIRONMENT_VARIABLES.md)
 - [Authentication](#authentication)
+- [API request examples (all auth modes)](docs/API_REQUESTS.md)
 - [Plugins](#plugins)
 - [Running with Docker](#running-with-docker)
 - [Deployment Notes](#deployment-notes)
@@ -222,6 +223,8 @@ Mutations gated by `ADMIN_WRITE_ENABLED=true`; full-dir reload also gated by `AD
 <a id="authentication"></a>
 ## 🔐 Authentication
 
+**Request examples (curl / httpx) for every auth mode:** [docs/API_REQUESTS.md](docs/API_REQUESTS.md).
+
 Tenant API auth is controlled per tenant by **`AUTH_MODE`**:
 
 | Mode | Behavior |
@@ -391,6 +394,7 @@ giswater-api/
 │── pyproject.toml       # Project metadata, dependencies, and tooling config
 │── docs/
 │   ├── ARCHITECTURE.md            # Package map, dependency rules, code locations
+│   ├── API_REQUESTS.md            # curl/httpx examples for all auth modes
 │   ├── VERSIONING.md              # API + per-tenant DB versioning policy
 │   ├── DATABASE_MIGRATIONS.md     # Alembic gwapi schema migrations + upgrade paths
 │   ├── DEPLOYMENT_CHECKLIST.md
