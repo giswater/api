@@ -118,7 +118,40 @@ class FeaturesService:
             limit=limit,
         )
 
-    async def get_feature(self, feature_type: FeatureType, feature_id: str) -> dict:
+    async def _get_feature_by_id(
+        self,
+        feature_type: FeatureType,
+        feature_id: str,
+        output_format: Literal["list", "geojson"],
+    ) -> tuple[dict, dict]:
+        body = create_body_dict(
+            device=self._effective_device(),
+            lang=self.ctx.lang,
+            extras={
+                "featureType": get_feature_type_param(feature_type),
+                "outputFormat": output_format,
+            },
+            filter_fields={get_feature_id_column(feature_type): {"value": [feature_id], "filterSign": "IN"}},
+            page_info={"limit": 1},
+            cur_user=self.ctx.user_id,
+        )
+        result = await run_procedure(self.ctx, "gw_fct_getfeatures", body)
+        features = ((result.get("body") or {}).get("data") or {}).get("features") or []
+        if not features:
+            raise LookupError(f"{feature_type} '{feature_id}' not found")
+        return result, features[0]
+
+    async def get_feature_fields(self, feature_type: FeatureType, feature_id: str) -> dict:
+        result, feature = await self._get_feature_by_id(feature_type, feature_id, "list")
+        result["body"]["data"] = {"feature": feature}
+        return result
+
+    async def get_feature_geojson(self, feature_type: FeatureType, feature_id: str) -> dict:
+        result, feature = await self._get_feature_by_id(feature_type, feature_id, "geojson")
+        result["body"]["data"] = feature
+        return result
+
+    async def get_feature_form(self, feature_type: FeatureType, feature_id: str) -> dict:
         body = create_body_dict(
             device=self.ctx.device,
             lang=self.ctx.lang,

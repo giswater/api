@@ -20,6 +20,8 @@ from app.schemas.features.feature_models import (
     ArcFilters,
     ConnecFilters,
     FeatureFilters,
+    GetFeatureFieldsResponse,
+    GetFeatureGeoJsonResponse,
     GetFeatureResponse,
     GetFeaturesGeoJsonResponse,
     GetFeaturesResponse,
@@ -38,6 +40,12 @@ _COORDINATES = Query(
     description="JSON string of map extent (ExtentModel: x1, y1, x2, y2)",
 )
 _ORDER_TYPE = Query(None, alias="orderType", title="Order type", description="ASC or DESC")
+
+_NODE_ID = Path(..., title="Node id", description="The unique identifier of the node", examples=["1001"])
+_ARC_ID = Path(..., title="Arc id", description="The unique identifier of the arc", examples=["2001"])
+_LINK_ID = Path(..., title="Link id", description="The unique identifier of the link", examples=["3001"])
+_CONNEC_ID = Path(..., title="Connec id", description="The unique identifier of the connec", examples=["4001"])
+_GULLY_ID = Path(..., title="Gully id", description="The unique identifier of the gully", examples=["5001"])
 
 _RESERVED_QUERY_KEYS = frozenset({"schema", "coordinates", "orderBy", "orderType", "limit"})
 
@@ -157,16 +165,44 @@ async def get_nodes_geojson(
 
 @router.get(
     "/nodes/{node_id}",
-    description="Returns the form/info payload for a single node (gw_fct_getinfofromid).",
-    response_model=GetFeatureResponse,
+    description="Returns a single node row from ve_node, same fields as GET /features/nodes.",
+    response_model=GetFeatureFieldsResponse,
     response_model_exclude_unset=True,
 )
 async def get_node(
     commons: CommonsDep,
-    node_id: str = Path(..., title="Node id", description="The unique identifier of the node", examples=["1001"]),
+    node_id: str = _NODE_ID,
 ):
     ctx = get_service_context(commons)
-    return await FeaturesService(ctx).get_feature("node", node_id)
+    return await FeaturesService(ctx).get_feature_fields("node", node_id)
+
+
+@router.get(
+    "/nodes/{node_id}/form",
+    description="Returns the form/info payload for a single node (gw_fct_getinfofromid).",
+    response_model=GetFeatureResponse,
+    response_model_exclude_unset=True,
+)
+async def get_node_form(
+    commons: CommonsDep,
+    node_id: str = _NODE_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_form("node", node_id)
+
+
+@router.get(
+    "/nodes/{node_id}/geojson",
+    description="Returns a single node as a GeoJSON Feature.",
+    response_model=GetFeatureGeoJsonResponse,
+    response_model_exclude_unset=True,
+)
+async def get_node_geojson_by_id(
+    commons: CommonsDep,
+    node_id: str = _NODE_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_geojson("node", node_id)
 
 
 @router.get(
@@ -214,16 +250,44 @@ async def get_arcs_geojson(
 
 @router.get(
     "/arcs/{arc_id}",
-    description="Returns the form/info payload for a single arc (gw_fct_getinfofromid).",
-    response_model=GetFeatureResponse,
+    description="Returns a single arc row from ve_arc, same fields as GET /features/arcs.",
+    response_model=GetFeatureFieldsResponse,
     response_model_exclude_unset=True,
 )
 async def get_arc(
     commons: CommonsDep,
-    arc_id: str = Path(..., title="Arc id", description="The unique identifier of the arc", examples=["2001"]),
+    arc_id: str = _ARC_ID,
 ):
     ctx = get_service_context(commons)
-    return await FeaturesService(ctx).get_feature("arc", arc_id)
+    return await FeaturesService(ctx).get_feature_fields("arc", arc_id)
+
+
+@router.get(
+    "/arcs/{arc_id}/form",
+    description="Returns the form/info payload for a single arc (gw_fct_getinfofromid).",
+    response_model=GetFeatureResponse,
+    response_model_exclude_unset=True,
+)
+async def get_arc_form(
+    commons: CommonsDep,
+    arc_id: str = _ARC_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_form("arc", arc_id)
+
+
+@router.get(
+    "/arcs/{arc_id}/geojson",
+    description="Returns a single arc as a GeoJSON Feature.",
+    response_model=GetFeatureGeoJsonResponse,
+    response_model_exclude_unset=True,
+)
+async def get_arc_geojson_by_id(
+    commons: CommonsDep,
+    arc_id: str = _ARC_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_geojson("arc", arc_id)
 
 
 @router.get(
@@ -268,16 +332,44 @@ async def get_links_geojson(
 
 @router.get(
     "/links/{link_id}",
-    description="Returns the form/info payload for a single link (gw_fct_getinfofromid).",
-    response_model=GetFeatureResponse,
+    description="Returns a single link row from ve_link, same fields as GET /features/links.",
+    response_model=GetFeatureFieldsResponse,
     response_model_exclude_unset=True,
 )
 async def get_link(
     commons: CommonsDep,
-    link_id: str = Path(..., title="Link id", description="The unique identifier of the link", examples=["3001"]),
+    link_id: str = _LINK_ID,
 ):
     ctx = get_service_context(commons)
-    return await FeaturesService(ctx).get_feature("link", link_id)
+    return await FeaturesService(ctx).get_feature_fields("link", link_id)
+
+
+@router.get(
+    "/links/{link_id}/form",
+    description="Returns the form/info payload for a single link (gw_fct_getinfofromid).",
+    response_model=GetFeatureResponse,
+    response_model_exclude_unset=True,
+)
+async def get_link_form(
+    commons: CommonsDep,
+    link_id: str = _LINK_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_form("link", link_id)
+
+
+@router.get(
+    "/links/{link_id}/geojson",
+    description="Returns a single link as a GeoJSON Feature.",
+    response_model=GetFeatureGeoJsonResponse,
+    response_model_exclude_unset=True,
+)
+async def get_link_geojson_by_id(
+    commons: CommonsDep,
+    link_id: str = _LINK_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_geojson("link", link_id)
 
 
 @router.get(
@@ -325,16 +417,44 @@ async def get_connecs_geojson(
 
 @router.get(
     "/connecs/{connec_id}",
-    description="Returns the form/info payload for a single connec (gw_fct_getinfofromid).",
-    response_model=GetFeatureResponse,
+    description="Returns a single connec row from ve_connec, same fields as GET /features/connecs.",
+    response_model=GetFeatureFieldsResponse,
     response_model_exclude_unset=True,
 )
 async def get_connec(
     commons: CommonsDep,
-    connec_id: str = Path(..., title="Connec id", description="The unique identifier of the connec", examples=["4001"]),
+    connec_id: str = _CONNEC_ID,
 ):
     ctx = get_service_context(commons)
-    return await FeaturesService(ctx).get_feature("connec", connec_id)
+    return await FeaturesService(ctx).get_feature_fields("connec", connec_id)
+
+
+@router.get(
+    "/connecs/{connec_id}/form",
+    description="Returns the form/info payload for a single connec (gw_fct_getinfofromid).",
+    response_model=GetFeatureResponse,
+    response_model_exclude_unset=True,
+)
+async def get_connec_form(
+    commons: CommonsDep,
+    connec_id: str = _CONNEC_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_form("connec", connec_id)
+
+
+@router.get(
+    "/connecs/{connec_id}/geojson",
+    description="Returns a single connec as a GeoJSON Feature.",
+    response_model=GetFeatureGeoJsonResponse,
+    response_model_exclude_unset=True,
+)
+async def get_connec_geojson_by_id(
+    commons: CommonsDep,
+    connec_id: str = _CONNEC_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_geojson("connec", connec_id)
 
 
 @router.get(
@@ -386,13 +506,41 @@ async def get_gullies_geojson(
 
 @router.get(
     "/gullies/{gully_id}",
-    description="Returns the form/info payload for a single gully (gw_fct_getinfofromid). UD schemas only.",
-    response_model=GetFeatureResponse,
+    description="Returns a single gully row from ve_gully, same fields as GET /features/gullies. UD schemas only.",
+    response_model=GetFeatureFieldsResponse,
     response_model_exclude_unset=True,
 )
 async def get_gully(
     commons: CommonsDep,
-    gully_id: str = Path(..., title="Gully id", description="The unique identifier of the gully", examples=["5001"]),
+    gully_id: str = _GULLY_ID,
 ):
     ctx = get_service_context(commons)
-    return await FeaturesService(ctx).get_feature("gully", gully_id)
+    return await FeaturesService(ctx).get_feature_fields("gully", gully_id)
+
+
+@router.get(
+    "/gullies/{gully_id}/form",
+    description="Returns the form/info payload for a single gully (gw_fct_getinfofromid). UD schemas only.",
+    response_model=GetFeatureResponse,
+    response_model_exclude_unset=True,
+)
+async def get_gully_form(
+    commons: CommonsDep,
+    gully_id: str = _GULLY_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_form("gully", gully_id)
+
+
+@router.get(
+    "/gullies/{gully_id}/geojson",
+    description="Returns a single gully as a GeoJSON Feature. UD schemas only.",
+    response_model=GetFeatureGeoJsonResponse,
+    response_model_exclude_unset=True,
+)
+async def get_gully_geojson_by_id(
+    commons: CommonsDep,
+    gully_id: str = _GULLY_ID,
+):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).get_feature_geojson("gully", gully_id)

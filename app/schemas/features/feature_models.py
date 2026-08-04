@@ -104,6 +104,42 @@ class GetFeatureResponse(BaseAPIResponse[Body[Data]]):
     pass
 
 
+class GetFeatureFieldsData(Data):
+    """Single feature row (gw_fct_getfeatures, outputFormat=list, filtered by id)."""
+
+    feature: Optional[Dict[str, Any]] = Field(None, description="Feature row")
+
+
+class GetFeatureFieldsBody(Body[GetFeatureFieldsData]):
+    form: Optional[Dict] = Field(default_factory=dict, description="Form")
+    feature: Optional[Dict] = Field(default_factory=dict, description="Feature")
+
+
+class GetFeatureFieldsResponse(BaseAPIResponse[GetFeatureFieldsBody]):
+    """Response model for a single feature row (gw_fct_getfeatures, outputFormat=list)."""
+
+    pass
+
+
+class GetFeatureGeoJsonData(Data):
+    """Single GeoJSON Feature."""
+
+    type: Optional[Literal["Feature"]] = Field(None, description="GeoJSON type")
+    geometry: Optional[Dict[str, Any]] = Field(None, description="GeoJSON geometry")
+    properties: Optional[Dict[str, Any]] = Field(None, description="Feature attributes")
+
+
+class GetFeatureGeoJsonBody(Body[GetFeatureGeoJsonData]):
+    form: Optional[Dict] = Field(default_factory=dict, description="Form")
+    feature: Optional[Dict] = Field(default_factory=dict, description="Feature")
+
+
+class GetFeatureGeoJsonResponse(BaseAPIResponse[GetFeatureGeoJsonBody]):
+    """Response model for a single feature as GeoJSON (gw_fct_getfeatures, outputFormat=geojson)."""
+
+    pass
+
+
 class GetFeaturesData(Data):
     """List payload returned by gw_fct_getfeatures with outputFormat=list."""
 

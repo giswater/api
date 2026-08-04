@@ -159,25 +159,135 @@ def test_limit_is_honoured(client, default_params):
 
 
 def test_get_feature_by_id(client, default_params):
-    assert_ready(client)
+    _require_getfeatures_refactor(client, default_params)
 
-    listing = client.get(
-        api("/basic/getlist"),
-        params={**default_params, "tableName": "ve_node", "pageInfo": '{"limit": 1}'},
-    )
+    listing = client.get(api("/features/nodes"), params={**default_params, "limit": 1})
     assert listing.status_code == 200
-    fields = listing.json().get("body", {}).get("data", {}).get("fields") or []
-    if not fields:
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
         pytest.skip("No nodes available to fetch by id")
 
-    node_id = fields[0].get("node_id")
+    node_id = features[0].get("node_id")
     assert node_id is not None
+    list_keys = set(features[0].keys())
 
     response = client.get(api(f"/features/nodes/{node_id}"), params=default_params)
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "Accepted"
-    assert "body" in data
+    feature = data["body"]["data"]["feature"]
+    assert feature["node_id"] == node_id
+    assert set(feature.keys()) == list_keys
+
+
+@pytest.mark.parametrize(
+    ("list_path", "id_field"),
+    [
+        ("/features/nodes", "node_id"),
+        ("/features/arcs", "arc_id"),
+        ("/features/links", "link_id"),
+        ("/features/connecs", "connec_id"),
+    ],
+)
+def test_get_feature_fields_by_id(client, default_params, list_path, id_field):
+    _require_getfeatures_refactor(client, default_params)
+
+    listing = client.get(api(list_path), params={**default_params, "limit": 1})
+    assert listing.status_code == 200
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
+        pytest.skip(f"No features available at {list_path}")
+
+    feature_id = features[0][id_field]
+    list_keys = set(features[0].keys())
+    base_path = list_path.rstrip("/")
+
+    response = client.get(api(f"{base_path}/{feature_id}"), params=default_params)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "Accepted"
+    feature = data["body"]["data"]["feature"]
+    assert feature[id_field] == feature_id
+    assert set(feature.keys()) == list_keys
+
+
+@pytest.mark.parametrize(
+    ("list_path", "id_field"),
+    [
+        ("/features/nodes", "node_id"),
+        ("/features/arcs", "arc_id"),
+        ("/features/links", "link_id"),
+        ("/features/connecs", "connec_id"),
+    ],
+)
+def test_get_feature_form_by_id(client, default_params, list_path, id_field):
+    _require_getfeatures_refactor(client, default_params)
+
+    listing = client.get(api(list_path), params={**default_params, "limit": 1})
+    assert listing.status_code == 200
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
+        pytest.skip(f"No features available at {list_path}")
+
+    feature_id = features[0][id_field]
+    base_path = list_path.rstrip("/")
+
+    response = client.get(api(f"{base_path}/{feature_id}/form"), params=default_params)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "Accepted"
+    assert "fields" in data["body"]["data"]
+
+
+@pytest.mark.parametrize(
+    ("list_path", "id_field"),
+    [
+        ("/features/nodes", "node_id"),
+        ("/features/arcs", "arc_id"),
+        ("/features/links", "link_id"),
+        ("/features/connecs", "connec_id"),
+    ],
+)
+def test_get_feature_geojson_by_id(client, default_params, list_path, id_field):
+    _require_getfeatures_refactor(client, default_params)
+
+    listing = client.get(api(list_path), params={**default_params, "limit": 1})
+    assert listing.status_code == 200
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
+        pytest.skip(f"No features available at {list_path}")
+
+    feature_id = features[0][id_field]
+    base_path = list_path.rstrip("/")
+
+    response = client.get(api(f"{base_path}/{feature_id}/geojson"), params=default_params)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "Accepted"
+    body_data = data["body"]["data"]
+    assert body_data["type"] == "Feature"
+    assert body_data["geometry"] is not None
+    assert body_data["properties"][id_field] == feature_id
+
+
+def test_get_feature_by_id_not_found(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    response = client.get(api("/features/arcs/__nope__"), params=default_params)
+    assert response.status_code == 404
+    assert "detail" in response.json()
+
+
+def test_arcs_geojson_not_swallowed_by_arc_id(client, default_params):
+    """Route order: /arcs/geojson must not match /arcs/{arc_id}."""
+    _require_getfeatures_refactor(client, default_params)
+
+    response = client.get(api("/features/arcs/geojson"), params={**default_params, "limit": 5})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "Accepted"
+    assert data["body"]["data"].get("type") == "FeatureCollection"
 
 
 def test_features_disabled_returns_404(client, default_params):
