@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.0** (refactored `gw_fct_getfeatures` with `featureType` / `outputFormat`).
+- **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.0** (refactored `gw_fct_getfeatures` with `featureType` / `outputFormat`). Compatibility table: **1.7.x → Giswater DB ≥ 4.17.0**.
 
 ### Deprecated
 
