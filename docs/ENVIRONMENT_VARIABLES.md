@@ -64,7 +64,7 @@ Used only when evaluating tenant **`GET ${API_ROOT}/v1/ready`** (after the datab
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `GISWATER_DB_VERSION_CHECK` | `false` | When `true`, readiness compares `{DB_SCHEMA}.sys_version.giswater` to `GISWATER_DB_MIN_VERSION`. Returns **503** if missing or below minimum. |
-| `GISWATER_DB_MIN_VERSION` | `4.8.0` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Align with [README compatibility](../README.md#compatibility). |
+| `GISWATER_DB_MIN_VERSION` | `4.17.0` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Default matches [README compatibility](../README.md#compatibility). Override per deployment based on active endpoints. |
 
 ### Rate limiting
 
@@ -144,6 +144,7 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_ROUTING` | `false` | External routing (Valhalla) integration. |
 | `API_CRM` | `false` | CRM / hydrometer-style endpoints. |
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
+| `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, `/features/arcs`, …; list, GeoJSON, by-id fields/form/geojson). Needs Giswater DB ≥ 4.17.0. |
 
 ### Database
 

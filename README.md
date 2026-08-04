@@ -55,12 +55,13 @@ Giswater API exposes a clean HTTP surface to query and operate a Giswater databa
 
 This service is versioned alongside the Giswater database. Use matching ranges to avoid subtle schema/API mismatches.
 
-| `giswater-api` version | Supported Giswater DB versions |
-| ---------------------- | ------------------------------ |
-| 0.1 – 0.7              | 4.0 – 4.7                      |
-| 0.8 – 1.x              | 4.8+                           |
+| `giswater-api` version | Supported Giswater DB versions | Notes |
+| ---------------------- | ------------------------------ | ----- |
+| 0.1 – 0.7              | 4.0 – 4.7                      | |
+| 0.8 – 1.6.x            | 4.8+                           | |
+| 1.7.x                  | 4.17+                          | `/features` needs refactored `gw_fct_getfeatures` (`featureType` / `outputFormat`). |
 
-When `GISWATER_DB_VERSION_CHECK=true`, tenant readiness (`GET ${API_ROOT}/v1/ready`) returns **503** if `{DB_SCHEMA}.sys_version` does not report a `giswater` version **≥** `GISWATER_DB_MIN_VERSION` (default `4.8.0`).
+When `GISWATER_DB_VERSION_CHECK=true`, tenant readiness (`GET ${API_ROOT}/v1/ready`) returns **503** if `{DB_SCHEMA}.sys_version` does not report a `giswater` version **≥** `GISWATER_DB_MIN_VERSION`. Set that variable to match the floor you want to enforce for each deployment.
 
 <a id="quick-start"></a>
 ## 🚀 Quick Start
@@ -341,6 +342,7 @@ All surfaces live under `${API_ROOT}` (default `/giswater`; override via the `AP
   - Admin: `${API_ROOT}/admin/docs` on apex host
 - Module routers are loaded from:
   - `basic`
+  - `features` (`nodes`, `arcs`, `links`, `connecs`, `gullies`)
   - `om` (`profile`, `flow`, `mincut`, `waterbalance`, `mapzones`)
   - `routing`
   - `crm`

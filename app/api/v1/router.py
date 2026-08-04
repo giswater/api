@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from starlette.routing import BaseRoute
 
 from app.api.deps import require_feature
-from app.api.v1.endpoints import basic, crm, system
+from app.api.v1.endpoints import basic, crm, features, system
 from app.api.v1.endpoints.epa import dscenario
 from app.api.v1.endpoints.om import flow, mincut, profile, waterbalance
 from app.api.v1.endpoints.om.mapzones import dma, dqa, omunit, omzone, presszone, sector
@@ -22,6 +22,7 @@ from app.tenancy.registry import Tenant
 # Tuple list: `APIRouter` is not hashable in Python 3.13+ (cannot use as dict keys).
 ROUTER_FEATURES: list[tuple[APIRouter, str]] = [
     (basic.router, "api_basic"),
+    (features.router, "api_features"),
     (profile.router, "api_profile"),
     (flow.router, "api_flow"),
     (mincut.router, "api_mincut"),

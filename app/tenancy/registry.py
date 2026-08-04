@@ -99,6 +99,7 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("API_ROUTING", settings.api_routing),
         ("API_CRM", settings.api_crm),
         ("API_EPA", settings.api_epa),
+        ("API_FEATURES", settings.api_features),
         ("DB_HOST", settings.db_host),
         ("DB_PORT", settings.db_port),
         ("DB_NAME", settings.db_name),
