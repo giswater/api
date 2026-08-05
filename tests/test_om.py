@@ -5,8 +5,12 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-import pytest
+import asyncio
 
+import pytest
+from psycopg import sql
+
+from app.tenancy import state
 from tests.helpers import assert_ready, api
 
 
@@ -104,8 +108,31 @@ _MINCUT_COORDINATES = {
 }
 
 
+def _ensure_current_user_in_cat_users(schema: str) -> None:
+    """om_mincut.assigned_to FK → cat_users(id); seed current_user before create."""
+    assert state.registry is not None, "Tenant registry not initialized"
+    tenant = state.registry.get("test")
+    assert tenant is not None, "Tenant 'test' not loaded"
+
+    async def _run() -> None:
+        async with tenant.db_manager.get_db() as conn:
+            assert conn is not None, "Postgres not available"
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    sql.SQL(
+                        "INSERT INTO {}.cat_users (id, name) "
+                        "VALUES (current_user, current_user) "
+                        "ON CONFLICT (id) DO NOTHING"
+                    ).format(sql.Identifier(schema))
+                )
+            await conn.commit()
+
+    asyncio.run(_run())
+
+
 def _create_mincut(client, default_params) -> int:
     """Create a mincut and return its ID."""
+    _ensure_current_user_in_cat_users(default_params["schema"])
     payload = {
         "coordinates": _MINCUT_COORDINATES,
         "plan": {
