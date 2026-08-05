@@ -41,6 +41,34 @@ services:
       api-network:
         ipv4_address: 172.21.1.50
 
+  # Local Keycloak for Swagger OAuth2 (password + auth-code). Optional:
+  #   podman compose --profile keycloak up -d keycloak
+  # See docker/keycloak/README.md
+  keycloak:
+    profiles: ["keycloak"]
+    image: quay.io/keycloak/keycloak:26.2.5
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: auth.localhost
+      KC_HOSTNAME_PORT: "8080"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./docker/keycloak/giswater-realm.json:/opt/keycloak/data/import/giswater-realm.json:Z
+    restart: unless-stopped
+    networks:
+      api-network:
+        ipv4_address: 172.21.1.60
+        # Same hostname the browser uses (→ 127.0.0.1). Inside the compose
+        # network this alias points at Keycloak so KEYCLOAK_URL works for both.
+        aliases:
+          - auth.localhost
+
 networks:
   api-network:
     ipam:

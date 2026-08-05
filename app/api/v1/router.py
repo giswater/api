@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from starlette.routing import BaseRoute
 
 from app.api.deps import require_feature
-from app.api.v1.endpoints import basic, crm, system
+from app.api.v1.endpoints import auth, basic, crm, system
 from app.api.v1.endpoints.epa import dscenario
 from app.api.v1.endpoints.om import flow, mincut, profile, waterbalance
 from app.api.v1.endpoints.om.mapzones import dma, dqa, omunit, omzone, presszone, sector
@@ -45,12 +45,16 @@ for _rtr, _flag in ROUTER_FEATURES:
         if callable(ep):
             FEATURE_BY_ENDPOINT[ep] = _flag
 
+# Endpoints only meaningful when the tenant uses Keycloak.
+KEYCLOAK_ONLY_ENDPOINTS = frozenset({auth.token})
+
 
 def register_v1(tenant_app: FastAPI) -> None:
     """Include all v1 routers on the tenant app, feature-gated, plus the system router."""
     for router, flag in ROUTER_FEATURES:
         tenant_app.include_router(router, dependencies=[Depends(require_feature(flag))])
     tenant_app.include_router(system.router)
+    tenant_app.include_router(auth.router)
 
 
 def tenant_openapi_routes(tenant_app: FastAPI, tenant: Tenant) -> list[BaseRoute]:
@@ -59,6 +63,8 @@ def tenant_openapi_routes(tenant_app: FastAPI, tenant: Tenant) -> list[BaseRoute
     for route in tenant_app.routes:
         ep = getattr(route, "endpoint", None)
         flag = FEATURE_BY_ENDPOINT.get(ep) if callable(ep) else None
+        if ep in KEYCLOAK_ONLY_ENDPOINTS and tenant.settings.auth_mode != "keycloak":
+            continue
         if flag is None or getattr(tenant.settings, flag, False):
             out.append(route)
     return out

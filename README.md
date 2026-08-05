@@ -249,7 +249,10 @@ When disabled (`AUTH_MODE=none`), endpoints accept anonymous requests for that t
 
 `/admin/*` uses a separate **platform** Keycloak realm (`PLATFORM_KEYCLOAK_*`) plus HTTP Basic, with `platform-admin` as the required role.
 
-> Swagger's built-in OAuth2 helper is no longer wired in — it can only point at one realm at a time, which is incompatible with multi-tenant. Clients send `Authorization: Bearer ...` directly.
+> **Swagger UI** (`${API_ROOT}/v1/docs` on each tenant host) shows an **Authorize** button whose schemes depend on `AUTH_MODE`:
+> - `none` — `adminBasic` only (platform admin credentials for `/logs*`).
+> - `basic` — `tenantBasic` + `adminBasic`.
+> - `keycloak` — `keycloakPassword` (username/password inline) and `keycloakAuthCode` (redirect to Keycloak login), plus `adminBasic`. Both OAuth flows use `KEYCLOAK_CLIENT_ID` via the server-side `POST /auth/token` proxy so the client secret never reaches the browser. Clients may also obtain tokens directly from Keycloak and send `Authorization: Bearer ...`.
 
 ---
 
@@ -290,6 +293,14 @@ The override enables:
 - bind mount `.:/app`
 - `uvicorn --reload`
 - `DEV_ALLOW_TENANT_HEADER=true`
+
+### Local Keycloak (Swagger OAuth2)
+
+```bash
+docker compose --profile keycloak up -d keycloak
+```
+
+Imports realm `giswater` with client `giswater-api` and user `test` / `test`. Point a tenant at `http://auth.localhost:8080` (see [docker/keycloak/README.md](docker/keycloak/README.md)), then use **Authorize** on `${API_ROOT}/v1/docs`.
 
 ---
 
