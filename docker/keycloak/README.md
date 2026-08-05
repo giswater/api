@@ -41,6 +41,8 @@ Reload the tenant (restart the app, or `POST ${API_ROOT}/admin/tenants/<id>/relo
    - **keycloakPassword**: username `test`, password `test` (client id pre-filled; leave client secret empty — the API proxy injects it).
    - **keycloakAuthCode**: redirects to Keycloak login (`test` / `test`).
 
+Auth-code uses `http://<host>:8000/.../docs/oauth2-redirect`. Keycloak only treats a **trailing** `*` as a wildcard (prefix match); `http://*.bgeo360.localhost:...` is a literal and will not match `acme.bgeo360.localhost`. The imported client allows `http://*` for local multi-tenant hosts. In real IdPs, register the exact tenant URL(s).
+
 ## Reset realm
 
 `start-dev` uses an ephemeral store. Recreate the container to re-import:
