@@ -26,7 +26,7 @@ dependencies = [
 giswater-api = "app.cli.main:main"
 
 [project.optional-dependencies]
-dev = ["pytest==8.3.4", "ruff"]
+dev = ["pytest==9.0.3", "ruff"]
 
 [build-system]
 requires = ["setuptools>=75.0"]
