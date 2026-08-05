@@ -5,7 +5,6 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-import asyncio
 import os
 from pathlib import Path
 
@@ -15,42 +14,29 @@ from fastapi.testclient import TestClient
 
 from app.core.constants import TENANT_PREFIX
 from app.main import app
-from app.tenancy import state
 
 TOKEN_URL = f"{TENANT_PREFIX}/auth/token"
 
 
-def _write_keycloak_tenant() -> None:
+def _write_tenant_env(tenant_id: str, *, auth_mode: str, keycloak: bool = False) -> None:
     tenants_dir = Path(os.environ["TENANTS_DIR"])
     base_lines = [
         line for line in (tenants_dir / "test.env").read_text().splitlines() if not line.startswith("AUTH_MODE=")
     ]
-    base_lines.extend(
-        [
-            "AUTH_MODE=keycloak",
-            "KEYCLOAK_URL=https://auth.example.com",
-            "KEYCLOAK_REALM=acme",
-            "KEYCLOAK_CLIENT_ID=giswater-api",
-            "KEYCLOAK_CLIENT_SECRET=secret",
-            "KEYCLOAK_ADMIN_CLIENT_ID=giswater-api-admin",
-            "KEYCLOAK_ADMIN_CLIENT_SECRET=admin-secret",
-            "KEYCLOAK_CALLBACK_URI=https://example.com/callback",
-        ]
-    )
-    (tenants_dir / "kc.env").write_text("\n".join(base_lines) + "\n")
-    assert state.registry is not None
-    asyncio.run(state.registry.reload_one("kc"))
-
-
-def _write_basic_tenant() -> None:
-    tenants_dir = Path(os.environ["TENANTS_DIR"])
-    base_lines = [
-        line for line in (tenants_dir / "test.env").read_text().splitlines() if not line.startswith("AUTH_MODE=")
-    ]
-    base_lines.append("AUTH_MODE=basic")
-    (tenants_dir / "basic.env").write_text("\n".join(base_lines) + "\n")
-    assert state.registry is not None
-    asyncio.run(state.registry.reload_one("basic"))
+    base_lines.append(f"AUTH_MODE={auth_mode}")
+    if keycloak:
+        base_lines.extend(
+            [
+                "KEYCLOAK_URL=https://auth.example.com",
+                "KEYCLOAK_REALM=acme",
+                "KEYCLOAK_CLIENT_ID=giswater-api",
+                "KEYCLOAK_CLIENT_SECRET=secret",
+                "KEYCLOAK_ADMIN_CLIENT_ID=giswater-api-admin",
+                "KEYCLOAK_ADMIN_CLIENT_SECRET=admin-secret",
+                "KEYCLOAK_CALLBACK_URI=https://example.com/callback",
+            ]
+        )
+    (tenants_dir / f"{tenant_id}.env").write_text("\n".join(base_lines) + "\n")
 
 
 def _cleanup_extra_tenants() -> None:
@@ -59,14 +45,14 @@ def _cleanup_extra_tenants() -> None:
         path = tenants_dir / f"{tenant_id}.env"
         if path.exists():
             path.unlink()
-    if state.registry is not None:
-        asyncio.run(state.registry.reload())
 
 
 @pytest.fixture
 def token_client(default_headers: dict[str, str]):
-    _write_keycloak_tenant()
-    _write_basic_tenant()
+    # Write tenant files *before* TestClient so lifespan load_all picks them up.
+    # (state.registry is None until the client starts.)
+    _write_tenant_env("kc", auth_mode="keycloak", keycloak=True)
+    _write_tenant_env("basic", auth_mode="basic")
     with TestClient(app, headers=default_headers) as client:
         yield client
     _cleanup_extra_tenants()

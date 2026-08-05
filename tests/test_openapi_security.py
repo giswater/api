@@ -5,7 +5,6 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-import asyncio
 import os
 from pathlib import Path
 
@@ -14,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from app.core.constants import TENANT_PREFIX
 from app.main import app
-from app.tenancy import state
 
 _BUSINESS_PATH = "/basic/getlist"
 _LOGS_PATH = "/logs"
@@ -44,24 +42,10 @@ def _write_tenant_env(tenant_id: str, auth_mode: str) -> None:
     (tenants_dir / f"{tenant_id}.env").write_text("\n".join(lines) + "\n")
 
 
-def _reload_tenant(tenant_id: str) -> None:
-    assert state.registry is not None
-    asyncio.run(state.registry.reload_one(tenant_id))
-
-
 def _remove_tenant(tenant_id: str) -> None:
-    tenants_dir = Path(os.environ["TENANTS_DIR"])
-    path = tenants_dir / f"{tenant_id}.env"
+    path = Path(os.environ["TENANTS_DIR"]) / f"{tenant_id}.env"
     if path.exists():
         path.unlink()
-    if state.registry is not None:
-        asyncio.run(state.registry.reload())
-
-
-@pytest.fixture
-def openapi_client(default_headers: dict[str, str]):
-    with TestClient(app, headers=default_headers) as client:
-        yield client
 
 
 def _fetch_openapi(client: TestClient, host: str) -> dict:
@@ -75,18 +59,24 @@ def _operation_security(schema: dict, path: str, method: str = "get") -> list[di
 
 
 @pytest.fixture
-def basic_tenant():
+def openapi_client(default_headers: dict[str, str]):
+    with TestClient(app, headers=default_headers) as client:
+        yield client
+
+
+@pytest.fixture
+def basic_openapi_client(default_headers: dict[str, str]):
     _write_tenant_env("basic", "basic")
-    _reload_tenant("basic")
-    yield
+    with TestClient(app, headers=default_headers) as client:
+        yield client
     _remove_tenant("basic")
 
 
 @pytest.fixture
-def keycloak_tenant():
+def keycloak_openapi_client(default_headers: dict[str, str]):
     _write_tenant_env("kc", "keycloak")
-    _reload_tenant("kc")
-    yield
+    with TestClient(app, headers=default_headers) as client:
+        yield client
     _remove_tenant("kc")
 
 
@@ -101,8 +91,8 @@ def test_openapi_none_mode_has_admin_basic_only(openapi_client: TestClient):
     assert "/auth/token" not in schema["paths"]
 
 
-def test_openapi_basic_mode(openapi_client: TestClient, basic_tenant):
-    schema = _fetch_openapi(openapi_client, "basic.bgeo360.com")
+def test_openapi_basic_mode(basic_openapi_client: TestClient):
+    schema = _fetch_openapi(basic_openapi_client, "basic.bgeo360.com")
     schemes = schema["components"]["securitySchemes"]
 
     assert schemes["tenantBasic"] == {"type": "http", "scheme": "basic"}
@@ -112,8 +102,8 @@ def test_openapi_basic_mode(openapi_client: TestClient, basic_tenant):
     assert "/auth/token" not in schema["paths"]
 
 
-def test_openapi_keycloak_mode(openapi_client: TestClient, keycloak_tenant):
-    schema = _fetch_openapi(openapi_client, "kc.bgeo360.com")
+def test_openapi_keycloak_mode(keycloak_openapi_client: TestClient):
+    schema = _fetch_openapi(keycloak_openapi_client, "kc.bgeo360.com")
     schemes = schema["components"]["securitySchemes"]
     token_path = "/auth/token"
 
