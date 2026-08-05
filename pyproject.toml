@@ -1,6 +1,6 @@
 [project]
 name = "giswater-api"
-version = "1.6.2"
+version = "1.7.0"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.135.2",
