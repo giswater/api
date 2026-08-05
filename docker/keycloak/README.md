@@ -32,7 +32,7 @@ KEYCLOAK_CALLBACK_URI=http://localhost:8000/giswater/v1/docs/oauth2-redirect
 
 Reload the tenant (restart the app, or `POST ${API_ROOT}/admin/tenants/<id>/reload`).
 
-`auth.localhost` is intentional: browsers resolve `*.localhost` → `127.0.0.1`, while the API container maps it to the host gateway (see `extra_hosts` in `docker-compose.yml`) so both the Swagger redirect and the `/auth/token` proxy reach Keycloak.
+`auth.localhost` is intentional: browsers resolve `*.localhost` → `127.0.0.1` (published `:8080`), while the API container resolves the same name via the compose network alias on the Keycloak service.
 
 ## Swagger
 

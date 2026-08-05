@@ -11,14 +11,8 @@
   "roles": {
     "realm": [
       { "name": "role_om", "description": "Operations role (dev)" },
-      { "name": "role_master", "description": "Master role (dev)" },
-      { "name": "default-roles-giswater", "description": "${role_default-roles}", "composite": true, "composites": { "realm": ["offline_access", "uma_authorization"] } }
+      { "name": "role_master", "description": "Master role (dev)" }
     ]
-  },
-  "defaultRole": {
-    "name": "default-roles-giswater",
-    "description": "${role_default-roles}",
-    "composite": true
   },
   "clients": [
     {
@@ -58,9 +52,7 @@
             "access.token.claim": "true"
           }
         }
-      ],
-      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email", "basic"],
-      "optionalClientScopes": ["address", "phone", "offline_access", "microprofile-jwt"]
+      ]
     },
     {
       "clientId": "giswater-api-admin",
@@ -94,7 +86,16 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["role_om", "default-roles-giswater"]
+      "realmRoles": ["role_om"]
+    },
+    {
+      "username": "service-account-giswater-api-admin",
+      "enabled": true,
+      "serviceAccountClientId": "giswater-api-admin",
+      "clientRoles": {
+        "realm-management": ["realm-admin"],
+        "account": ["manage-account", "view-profile"]
+      }
     }
   ]
 }

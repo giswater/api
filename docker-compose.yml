@@ -29,9 +29,6 @@ services:
       # Docker Desktop already supports host.docker.internal natively.
       - "host.containers.internal:host-gateway"
       - "host.docker.internal:host-gateway"
-      # Browser resolves auth.localhost → 127.0.0.1; the API container must
-      # reach the published Keycloak port via the host gateway instead.
-      - "auth.localhost:host-gateway"
     restart: unless-stopped
     healthcheck:
       # Uses API_ROOT from .env (default /giswater); override in compose env if you change API_ROOT.
@@ -58,7 +55,6 @@ services:
       KC_HOSTNAME: auth.localhost
       KC_HOSTNAME_PORT: "8080"
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
       KC_HEALTH_ENABLED: "true"
     ports:
       - "127.0.0.1:8080:8080"
@@ -68,6 +64,10 @@ services:
     networks:
       api-network:
         ipv4_address: 172.21.1.60
+        # Same hostname the browser uses (→ 127.0.0.1). Inside the compose
+        # network this alias points at Keycloak so KEYCLOAK_URL works for both.
+        aliases:
+          - auth.localhost
 
 networks:
   api-network:
