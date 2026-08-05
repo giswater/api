@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-08-05
+
 ### Added
 
-- Swagger OAuth2 support.
+- **Swagger UI OAuth2** for tenant docs (`${API_ROOT}/v1/docs`): Authorize schemes follow `AUTH_MODE` — `keycloakPassword` (direct access grant) and `keycloakAuthCode` (authorization-code + PKCE redirect) when `AUTH_MODE=keycloak`, plus existing Basic schemes. See [`app/core/openapi.py`](app/core/openapi.py).
+- **`POST ${API_ROOT}/v1/auth/token`** Keycloak token proxy (`app/api/v1/endpoints/auth.py`): password / authorization_code / refresh_token grants; injects `KEYCLOAK_CLIENT_SECRET` server-side so the browser never sees it. Rate-limited.
+- **Local Keycloak** Compose profile (`docker compose --profile keycloak up -d keycloak`): imports realm `giswater` / client `giswater-api` / user `test`/`test` for Swagger Authorize. Docs: [`docker/keycloak/README.md`](docker/keycloak/README.md).
+- **[`docs/API_REQUESTS.md`](docs/API_REQUESTS.md)**: curl/httpx examples for every `AUTH_MODE` and the platform admin API.
+
+### Changed
+
+- Dependency bumps: `cryptography` 46.0.7 → 50.0.0, `pyjwt` 2.12.1 → 2.13.0, `pytest` 8.3.4 → 9.0.3; add `python-multipart` (required by the token proxy form body).
+
+### Fixed
+
+- Keycloak Docker realm import and valid redirect URIs for the Swagger OAuth2 redirect path.
 
 ## [1.6.2] - 2026-07-30
 
@@ -352,7 +365,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.6.0...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.7.0...main
+[1.7.0]: https://github.com/Giswater/giswater-api/compare/v1.6.2...v1.7.0
+[1.6.2]: https://github.com/Giswater/giswater-api/compare/v1.6.1...v1.6.2
+[1.6.1]: https://github.com/Giswater/giswater-api/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/Giswater/giswater-api/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Giswater/giswater-api/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Giswater/giswater-api/compare/v1.3.2...v1.4.0
