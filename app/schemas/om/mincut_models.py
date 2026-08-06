@@ -218,7 +218,7 @@ class MincutToggleValveUnaccessData(Data):
     mincutNode: FeatureCollectionModel = Field(..., description="Mincut node")
     mincutConnec: FeatureCollectionModel = Field(..., description="Mincut connecs")
     mincutArc: FeatureCollectionModel = Field(..., description="Mincut arcs")
-    tiled: bool = Field(..., description="Tiled", examples=[True])
+    tiled: Optional[bool] = Field(None, description="Tiled", examples=[True])
     geometry: Geometry = Field(..., description="Extent of the mincut")
 
 
@@ -254,7 +254,7 @@ class MincutToggleValveStatusData(Data):
     mincutNode: FeatureCollectionModel = Field(..., description="Mincut node")
     mincutConnec: FeatureCollectionModel = Field(..., description="Mincut connecs")
     mincutArc: FeatureCollectionModel = Field(..., description="Mincut arcs")
-    tiled: bool = Field(..., description="Tiled", examples=[True])
+    tiled: Optional[bool] = Field(None, description="Tiled", examples=[True])
     geometry: Geometry = Field(..., description="Extent of the mincut")
 
 
