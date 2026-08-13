@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.constants import TENANT_PREFIX
+from app.core.constants import TENANT_PREFIX_V1
 from app.main import app
 
 _BUSINESS_PATH = "/basic/getlist"
@@ -49,7 +49,7 @@ def _remove_tenant(tenant_id: str) -> None:
 
 
 def _fetch_openapi(client: TestClient, host: str) -> dict:
-    response = client.get(f"{TENANT_PREFIX}/openapi.json", headers={"Host": host})
+    response = client.get(f"{TENANT_PREFIX_V1}/openapi.json", headers={"Host": host})
     assert response.status_code == 200
     return response.json()
 
@@ -113,8 +113,8 @@ def test_openapi_keycloak_mode(keycloak_openapi_client: TestClient):
 
     password_flow = schemes["keycloakPassword"]["flows"]["password"]
     auth_code_flow = schemes["keycloakAuthCode"]["flows"]["authorizationCode"]
-    assert password_flow["tokenUrl"] == f"{TENANT_PREFIX}/auth/token"
-    assert auth_code_flow["tokenUrl"] == f"{TENANT_PREFIX}/auth/token"
+    assert password_flow["tokenUrl"] == f"{TENANT_PREFIX_V1}/auth/token"
+    assert auth_code_flow["tokenUrl"] == f"{TENANT_PREFIX_V1}/auth/token"
     assert auth_code_flow["authorizationUrl"].endswith("/realms/acme/protocol/openid-connect/auth")
 
     business_security = _operation_security(schema, _BUSINESS_PATH)

@@ -7,6 +7,7 @@ or (at your option) any later version.
 
 import logging
 import os
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -16,13 +17,17 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redi
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import BaseRoute
 
 from .api.exception_handlers import register_exception_handlers
 from .api.admin.router import register_admin
-from .api.v1.router import register_v1, tenant_openapi_routes
+from .api.v1.router import register_v1
+from .api.v1.router import tenant_openapi_routes as tenant_openapi_routes_v1
+from .api.v2.router import register_v2
+from .api.v2.router import tenant_openapi_routes as tenant_openapi_routes_v2
 from .auth import verify_admin
 from .core.config import global_settings
-from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX
+from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX_V1, TENANT_PREFIX_V2
 from .core.openapi import apply_tenant_security
 from .middleware.request_logging import request_logging_middleware
 from .schemas.common import GwErrorResponse
@@ -37,12 +42,87 @@ VERSION = pkg_version("giswater-api")
 DESCRIPTION = "API for interacting with a Giswater database."
 logger = logging.getLogger(__name__)
 
+_TENANT_RESPONSES = {
+    500: {"model": GwErrorResponse, "description": "Database function error"},
+    503: {"model": GwErrorResponse, "description": "Database unavailable"},
+}
+
 
 def _register_health_route(app: FastAPI, path: str = "/health") -> None:
     @app.get(path, include_in_schema=False)
     async def health():
         """Liveness probe: process is up."""
         return {"status": "ok"}
+
+
+def _create_tenant_app() -> FastAPI:
+    return FastAPI(
+        version=VERSION,
+        title=TITLE,
+        description=DESCRIPTION,
+        docs_url=None,
+        openapi_url=None,
+        redoc_url=None,
+        responses=_TENANT_RESPONSES,
+    )
+
+
+def _register_tenant_meta_routes(
+    app: FastAPI,
+    *,
+    prefix: str,
+    openapi_routes_fn: Callable[[FastAPI, Tenant], list[BaseRoute]],
+) -> None:
+    @app.get("/", summary="Service status")
+    async def tenant_root():
+        return {
+            "status": "Accepted",
+            "message": f"{TITLE} is running.",
+            "version": VERSION,
+            "description": DESCRIPTION,
+        }
+
+    @app.get("/openapi.json", include_in_schema=False)
+    async def tenant_openapi_json(request: Request):
+        tenant: Tenant = request.state.tenant
+        routes = openapi_routes_fn(app, tenant)
+        root_path = request.scope.get("root_path") or prefix
+        schema = get_openapi(
+            title=TITLE,
+            version=VERSION,
+            description=DESCRIPTION,
+            routes=routes,
+            servers=[{"url": root_path}],
+        )
+        schema = apply_tenant_security(schema, tenant, root_path)
+        return JSONResponse(schema)
+
+    @app.get("/docs", include_in_schema=False)
+    async def tenant_docs(request: Request):
+        tenant: Tenant = request.state.tenant
+        init_oauth = None
+        if tenant.settings.auth_mode == "keycloak":
+            init_oauth = {
+                "clientId": tenant.settings.keycloak_client_id,
+                "usePkceWithAuthorizationCodeGrant": True,
+                "scopes": "openid profile email",
+            }
+        return get_swagger_ui_html(
+            openapi_url=f"{prefix}/openapi.json",
+            title=f"{TITLE} - docs",
+            oauth2_redirect_url=f"{prefix}/docs/oauth2-redirect",
+            init_oauth=init_oauth,
+            swagger_ui_parameters={"persistAuthorization": True},
+        )
+
+    @app.get("/docs/oauth2-redirect", include_in_schema=False)
+    async def tenant_docs_oauth2_redirect():
+        return get_swagger_ui_oauth2_redirect_html()
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        favicon_path = os.path.join("app", "static", "favicon.ico")
+        return FileResponse(favicon_path)
 
 
 @asynccontextmanager
@@ -83,83 +163,16 @@ parent = FastAPI(
     openapi_url=None,
     redoc_url=None,
     lifespan=lifespan,
-    responses={
-        500: {"model": GwErrorResponse, "description": "Database function error"},
-        503: {"model": GwErrorResponse, "description": "Database unavailable"},
-    },
+    responses=_TENANT_RESPONSES,
 )
 
-tenant_app = FastAPI(
-    version=VERSION,
-    title=TITLE,
-    description=DESCRIPTION,
-    docs_url=None,
-    openapi_url=None,
-    redoc_url=None,
-    responses={
-        500: {"model": GwErrorResponse, "description": "Database function error"},
-        503: {"model": GwErrorResponse, "description": "Database unavailable"},
-    },
-)
+tenant_app_v1 = _create_tenant_app()
+tenant_app_v2 = _create_tenant_app()
 
-register_v1(tenant_app)
-
-
-@tenant_app.get("/", summary="Service status")
-async def tenant_root():
-    return {
-        "status": "Accepted",
-        "message": f"{TITLE} is running.",
-        "version": VERSION,
-        "description": DESCRIPTION,
-    }
-
-
-@tenant_app.get("/openapi.json", include_in_schema=False)
-async def tenant_openapi_json(request: Request):
-    tenant: Tenant = request.state.tenant
-    routes = tenant_openapi_routes(tenant_app, tenant)
-    root_path = request.scope.get("root_path") or TENANT_PREFIX
-    schema = get_openapi(
-        title=TITLE,
-        version=VERSION,
-        description=DESCRIPTION,
-        routes=routes,
-        servers=[{"url": root_path}],
-    )
-    schema = apply_tenant_security(schema, tenant, root_path)
-    return JSONResponse(schema)
-
-
-@tenant_app.get("/docs", include_in_schema=False)
-async def tenant_docs(request: Request):
-    tenant: Tenant = request.state.tenant
-    init_oauth = None
-    if tenant.settings.auth_mode == "keycloak":
-        init_oauth = {
-            "clientId": tenant.settings.keycloak_client_id,
-            "usePkceWithAuthorizationCodeGrant": True,
-            "scopes": "openid profile email",
-        }
-    return get_swagger_ui_html(
-        openapi_url=f"{TENANT_PREFIX}/openapi.json",
-        title=f"{TITLE} - docs",
-        oauth2_redirect_url=f"{TENANT_PREFIX}/docs/oauth2-redirect",
-        init_oauth=init_oauth,
-        swagger_ui_parameters={"persistAuthorization": True},
-    )
-
-
-@tenant_app.get("/docs/oauth2-redirect", include_in_schema=False)
-async def tenant_docs_oauth2_redirect():
-    return get_swagger_ui_oauth2_redirect_html()
-
-
-@tenant_app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    favicon_path = os.path.join("app", "static", "favicon.ico")
-    return FileResponse(favicon_path)
-
+register_v1(tenant_app_v1)
+register_v2(tenant_app_v2)
+_register_tenant_meta_routes(tenant_app_v1, prefix=TENANT_PREFIX_V1, openapi_routes_fn=tenant_openapi_routes_v1)
+_register_tenant_meta_routes(tenant_app_v2, prefix=TENANT_PREFIX_V2, openapi_routes_fn=tenant_openapi_routes_v2)
 
 admin_app = FastAPI(
     title=f"{TITLE} - Admin",
@@ -176,11 +189,12 @@ admin_app = FastAPI(
 register_admin(admin_app)
 
 parent.mount(ADMIN_PREFIX, admin_app)
-parent.mount(TENANT_PREFIX, tenant_app)
+parent.mount(TENANT_PREFIX_V1, tenant_app_v1)
+parent.mount(TENANT_PREFIX_V2, tenant_app_v2)
 parent.mount(STATIC_PREFIX, StaticFiles(directory="app/static"), name="static")
 
 _register_health_route(parent, GLOBAL_HEALTH_PATH)
-for _app in (tenant_app, admin_app):
+for _app in (tenant_app_v1, tenant_app_v2, admin_app):
     _register_health_route(_app)
 
 
@@ -188,9 +202,10 @@ for _app in (tenant_app, admin_app):
 parent.middleware("http")(host_middleware)
 parent.middleware("http")(request_logging_middleware)
 
-for _app in (parent, tenant_app, admin_app):
+for _app in (parent, tenant_app_v1, tenant_app_v2, admin_app):
     register_exception_handlers(_app)
 
-load_plugins(tenant_app)
+# TODO: Think about how to handle plugins for v2
+load_plugins(tenant_app_v1)
 
 app = parent

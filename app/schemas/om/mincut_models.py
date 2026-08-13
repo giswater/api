@@ -407,6 +407,37 @@ class MincutDeleteResponse(BaseAPIResponse[Dict]):
 # endregion
 
 
+# region Mincut list (v2) response models
+
+
+class GetMincutsData(BaseModel):
+    """Rows from om_mincut (geometry omitted unless includeGeometry=true)"""
+
+    mincuts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "List of mincuts. Geometry fields (anl_the_geom, exec_the_geom, polygon_the_geom) "
+            "are GeoJSON geometries in EPSG:4326 when includeGeometry=true"
+        ),
+    )
+
+
+class GetMincutsBody(Body[GetMincutsData]):
+    """Body for mincut list response"""
+
+    form: Optional[Dict] = Field({}, description="Form")
+    feature: Optional[Dict] = Field({}, description="Feature")
+
+
+class GetMincutsResponse(BaseAPIResponse[GetMincutsBody]):
+    """Response model for mincut list (v2)"""
+
+    pass
+
+
+# endregion
+
+
 # endregion
 
 

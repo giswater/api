@@ -13,6 +13,7 @@ from typing import Optional
 from pydantic import ValidationError
 
 from app.core.exceptions import InvalidParametersError
+from app.db.execution import execute_sql
 from app.schemas.common import CoordinatesModel
 from app.schemas.om.mincut_models import (
     MINCUT_CAUSE_VALUES,
@@ -23,8 +24,11 @@ from app.schemas.om.mincut_models import (
 )
 from app.services.basic_service import BasicService
 from app.services.context import ServiceContext
+from app.services.helpers import accepted_data_response
 from app.services.procedure import run_procedure
 from app.utils.body import create_body_dict
+
+_OM_MINCUT_GEOM_COLUMNS = ("anl_the_geom", "exec_the_geom", "polygon_the_geom")
 
 
 class MincutService:
@@ -54,6 +58,49 @@ class MincutService:
     async def get_mincuts(self, filter_fields: Optional[str] = None) -> dict:
         self._validate_mincut_filter_fields(filter_fields)
         return await self._basic.get_list("tbl_mincut_manager", filter_fields=filter_fields)
+
+    async def get_mincuts_v2(self, include_geometry: bool = False) -> dict:
+        geom_keys = list(_OM_MINCUT_GEOM_COLUMNS)
+        if include_geometry:
+            sql = """
+                SELECT (
+                    (to_jsonb(m) - %s::text[])
+                    || jsonb_build_object(
+                        'anl_the_geom',
+                        CASE
+                            WHEN m.anl_the_geom IS NULL THEN NULL
+                            ELSE ST_AsGeoJSON(ST_Transform(m.anl_the_geom, 4326))::jsonb
+                        END,
+                        'exec_the_geom',
+                        CASE
+                            WHEN m.exec_the_geom IS NULL THEN NULL
+                            ELSE ST_AsGeoJSON(ST_Transform(m.exec_the_geom, 4326))::jsonb
+                        END,
+                        'polygon_the_geom',
+                        CASE
+                            WHEN m.polygon_the_geom IS NULL THEN NULL
+                            ELSE ST_AsGeoJSON(ST_Transform(m.polygon_the_geom, 4326))::jsonb
+                        END
+                    )
+                ) AS mincut
+                FROM {schema}.om_mincut m
+            """
+        else:
+            sql = """
+                SELECT (to_jsonb(m) - %s::text[]) AS mincut
+                FROM {schema}.om_mincut m
+            """
+        rows = await execute_sql(
+            self.ctx.logger,
+            self.ctx.db_manager,
+            sql,
+            parameters=(geom_keys,),
+            schema=self.ctx.schema,
+            user=self.ctx.user_id,
+            db_role=self.ctx.db_role,
+        )
+        mincuts = [row["mincut"] for row in rows]
+        return await accepted_data_response(self.ctx, "Fetched mincuts successfully", {"mincuts": mincuts})
 
     async def get_mincut_dialog(self, mincut_id: int) -> dict:
         body = create_body_dict(device=self.ctx.device, extras={"mincutId": mincut_id}, cur_user=self.ctx.user_id)

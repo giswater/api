@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from . import state
 from ..core.config import global_settings
-from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX
+from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_API_PREFIXES
 from .registry import RESERVED_IDS, TENANT_ID_RE
 
 
@@ -48,6 +48,10 @@ def _path_starts(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix + "/")
 
 
+def _is_tenant_api_path(path: str) -> bool:
+    return any(_path_starts(path, prefix) for prefix in TENANT_API_PREFIXES)
+
+
 def _resolve_tenant(request: Request, tid: str):
     """Attach the loaded tenant or return an error response."""
     reg = state.registry
@@ -76,7 +80,7 @@ async def host_middleware(request: Request, call_next):  # noqa: C901
         if _path_starts(path, ADMIN_PREFIX):
             return await call_next(request)
 
-        if _path_starts(path, TENANT_PREFIX):
+        if _is_tenant_api_path(path):
             err = _resolve_tenant(request, single_tid)
             if err is not None:
                 return err
@@ -92,7 +96,7 @@ async def host_middleware(request: Request, call_next):  # noqa: C901
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         return await call_next(request)
 
-    if _path_starts(path, TENANT_PREFIX):
+    if _is_tenant_api_path(path):
         if apex:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
 

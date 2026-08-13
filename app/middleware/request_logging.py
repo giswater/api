@@ -11,7 +11,7 @@ from starlette.responses import Response
 
 from ..tenancy import state
 from ..core.config import global_settings
-from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX
+from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_API_PREFIXES
 from ..db.context import DB_IDENTITY_CTX, REQUEST_ID_CTX
 from ..db.log_store import insert_api_log
 
@@ -119,17 +119,27 @@ async def _resolve_api_logger(request: Request):
     return state.global_logger
 
 
+def _tenant_api_rest(path: str) -> str | None:
+    """Return the path under a tenant API prefix, or None if not a tenant API path."""
+    for prefix in TENANT_API_PREFIXES:
+        if not _path_starts(path, prefix):
+            continue
+        rest = path[len(prefix) :] if path.startswith(prefix) else path
+        if not rest.startswith("/"):
+            rest = "/" + rest
+        return rest
+    return None
+
+
 def _is_global_path(path: str) -> bool:
     """Paths that must not write tenant-scoped rows to the API log DB."""
     if path == "/" or _path_starts(path, GLOBAL_HEALTH_PATH) or _path_starts(path, STATIC_PREFIX):
         return True
     if _path_starts(path, ADMIN_PREFIX):
         return True
-    if not _path_starts(path, TENANT_PREFIX):
+    rest = _tenant_api_rest(path)
+    if rest is None:
         return False
-    rest = path[len(TENANT_PREFIX) :] if path.startswith(TENANT_PREFIX) else path
-    if not rest.startswith("/"):
-        rest = "/" + rest
     if rest.startswith("/openapi.json") or rest.startswith("/docs") or rest.startswith("/redoc"):
         return True
     if "/openapi.json" in path:

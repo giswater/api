@@ -78,7 +78,7 @@ def _auth_subprocess_script(auth_mode: str, request_snippet: str) -> str:
         os.environ.setdefault("GISWATER_DB_VERSION_CHECK", "false")
 
         from fastapi.testclient import TestClient
-        from app.core.constants import TENANT_PREFIX
+        from app.core.constants import TENANT_PREFIX_V1
         from app.main import app
 
         with TestClient(
@@ -96,7 +96,7 @@ def test_basic_auth_missing_credentials_401():
     script = _auth_subprocess_script(
         "basic",
         f"""
-        r = c.get(f"{{TENANT_PREFIX}}/basic/getlist", params={{"schema": {schema!r}}})
+        r = c.get(f"{{TENANT_PREFIX_V1}}/basic/getlist", params={{"schema": {schema!r}}})
         print(json.dumps({{"status": r.status_code}}))
         """,
     )
@@ -110,7 +110,7 @@ def test_basic_auth_invalid_credentials_401():
         "basic",
         f"""
         r = c.get(
-            f"{{TENANT_PREFIX}}/basic/getlist",
+            f"{{TENANT_PREFIX_V1}}/basic/getlist",
             params={{"schema": {schema!r}}},
             auth=("wrong", "credentials"),
         )
@@ -126,7 +126,7 @@ def test_none_mode_allows_anonymous():
     script = _auth_subprocess_script(
         "none",
         f"""
-        r = c.get(f"{{TENANT_PREFIX}}/basic/getlist", params={{"schema": {schema!r}}})
+        r = c.get(f"{{TENANT_PREFIX_V1}}/basic/getlist", params={{"schema": {schema!r}}})
         print(json.dumps({{"status": r.status_code}}))
         """,
     )
@@ -144,7 +144,7 @@ def test_basic_auth_valid_credentials(client, default_params):
         "basic",
         f"""
         r = c.get(
-            f"{{TENANT_PREFIX}}/basic/getlist",
+            f"{{TENANT_PREFIX_V1}}/basic/getlist",
             params={{"schema": {schema!r}, "tableName": "ve_arc"}},
             auth=({bootstrap_user!r}, "smokepass99"),
         )

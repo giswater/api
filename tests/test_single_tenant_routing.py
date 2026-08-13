@@ -39,28 +39,31 @@ os.environ.setdefault("LOG_DB_ENABLED", "false")
 os.environ.setdefault("GISWATER_DB_VERSION_CHECK", "false")
 
 from fastapi.testclient import TestClient
-from app.core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, TENANT_PREFIX
+from app.core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, TENANT_PREFIX_V1, TENANT_PREFIX_V2
 from app.main import app
 """
 
 
 def test_single_tenant_serves_tenant_routes_by_ip():
-    """`/v1/health` works on a bare IP host with no DNS and no X-Tenant-ID."""
+    """`/v1` and `/v2` health work on a bare IP host with no DNS and no X-Tenant-ID."""
     script = textwrap.dedent(
         _PRELUDE.format(single="test")
         + """
 with TestClient(app, base_url="http://127.0.0.1") as c:
-    r_tenant = c.get(f"{TENANT_PREFIX}/health")
+    r_tenant = c.get(f"{TENANT_PREFIX_V1}/health")
+    r_tenant_v2 = c.get(f"{TENANT_PREFIX_V2}/health")
     r_global = c.get(GLOBAL_HEALTH_PATH)
 
 print(json.dumps({
     "tenant_health": r_tenant.status_code,
+    "tenant_v2_health": r_tenant_v2.status_code,
     "global_health": r_global.status_code,
 }))
 """
     )
     data = _run_subprocess(script)
     assert data["tenant_health"] == 200
+    assert data["tenant_v2_health"] == 200
     assert data["global_health"] == 200
 
 
@@ -85,7 +88,7 @@ def test_single_tenant_ignores_hostile_host_header():
         _PRELUDE.format(single="test")
         + """
 with TestClient(app, base_url="http://attacker.example.com") as c:
-    r = c.get(f"{TENANT_PREFIX}/health", headers={"host": "evil.example.com"})
+    r = c.get(f"{TENANT_PREFIX_V1}/health", headers={"host": "evil.example.com"})
 
 print(json.dumps({"status": r.status_code}))
 """
@@ -100,7 +103,7 @@ def test_single_tenant_missing_returns_unknown_tenant():
         _PRELUDE.format(single="missingtenant")
         + """
 with TestClient(app, base_url="http://127.0.0.1") as c:
-    r = c.get(f"{TENANT_PREFIX}/health")
+    r = c.get(f"{TENANT_PREFIX_V1}/health")
 
 print(json.dumps({"status": r.status_code, "detail": r.json().get("detail")}))
 """
@@ -116,8 +119,8 @@ def test_single_tenant_dns_mode_unchanged_when_unset():
         _PRELUDE.format(single="")
         + """
 with TestClient(app, base_url="http://test.bgeo360.com") as c:
-    r_tenant = c.get(f"{TENANT_PREFIX}/health")
-    r_apex_tenant = c.get(f"{TENANT_PREFIX}/health", headers={"host": "bgeo360.com"})
+    r_tenant = c.get(f"{TENANT_PREFIX_V1}/health")
+    r_apex_tenant = c.get(f"{TENANT_PREFIX_V1}/health", headers={"host": "bgeo360.com"})
     r_admin_subdomain = c.get(
         f"{ADMIN_PREFIX}/health",
         headers={"host": "test.bgeo360.com"},

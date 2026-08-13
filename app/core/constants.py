@@ -11,7 +11,9 @@ or (at your option) any later version.
 from .config import global_settings
 
 API_ROOT = global_settings.api_root
-TENANT_PREFIX = f"{API_ROOT}/v1"
+TENANT_PREFIX_V1 = f"{API_ROOT}/v1"
+TENANT_PREFIX_V2 = f"{API_ROOT}/v2"
+TENANT_API_PREFIXES = (TENANT_PREFIX_V1, TENANT_PREFIX_V2)
 ADMIN_PREFIX = f"{API_ROOT}/admin"
 GLOBAL_HEALTH_PATH = f"{API_ROOT}/health"
 STATIC_PREFIX = f"{API_ROOT}/static"

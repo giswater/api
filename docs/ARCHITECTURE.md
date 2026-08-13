@@ -38,7 +38,7 @@ app/
     main.py               # command groups (admin, tenant)
   core/                   # LEAF: no intra-app imports
     config.py             # GlobalSettings / TenantSettings, AUTH_MODES, deprecation constants
-    constants.py          # API_ROOT, TENANT_PREFIX, ADMIN_PREFIX, STATIC_PREFIX, GLOBAL_HEALTH_PATH
+    constants.py          # API_ROOT, TENANT_PREFIX_V1/V2, ADMIN_PREFIX, STATIC_PREFIX, GLOBAL_HEALTH_PATH
     exceptions.py         # ProcedureError, DatabaseUnavailableError, InvalidParametersError
   auth/
     __init__.py           # re-exports get_current_user, verify_admin, require_role, ApiUser
