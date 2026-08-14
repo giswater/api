@@ -22,3 +22,15 @@ async def accepted_data_response(ctx: ServiceContext, message: str, data: dict) 
         "version": {"api": ctx.api_version, "db": db_version},
         "body": {"form": {}, "feature": {}, "data": data},
     }
+
+
+async def accepted_v2_response(ctx: ServiceContext, message: str, body: dict) -> dict:
+    """Accepted envelope with the payload as `body` (no form/feature/data wrap)."""
+    log = ctx.logger or logging.getLogger(__name__)
+    db_version = await get_db_version(log, ctx.db_manager, schema=ctx.schema)
+    return {
+        "status": "Accepted",
+        "message": {"level": 3, "text": message},
+        "version": {"api": ctx.api_version, "db": db_version},
+        "body": body,
+    }

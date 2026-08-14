@@ -5,15 +5,18 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from pydantic import BaseModel, Field, field_validator
-from pydantic_geojson import FeatureCollectionModel
+from datetime import date, datetime
+from enum import IntEnum
 from typing import Optional, Dict, Any, List, Literal
-from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_geojson import FeatureCollectionModel
 
 from ..common import (
     BaseAPIResponse,
     Body,
     Data,
+    ExtentModel,
     Geometry,
     Info,
     FilterFieldModel,
@@ -99,9 +102,7 @@ class MincutCreateData(Data):
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial point")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
     mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
-    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(
-        None, description="Mincut change-status valve"
-    )
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
     mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
         None, description="Mincut not proposed / do-not-operate valve"
     )
@@ -146,9 +147,7 @@ class MincutDialogData(Data):
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial point")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
     mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
-    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(
-        None, description="Mincut change-status valve"
-    )
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
     mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
         None, description="Mincut not proposed / do-not-operate valve"
     )
@@ -193,9 +192,7 @@ class MincutUpdateData(Data):
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial point")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
     mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
-    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(
-        None, description="Mincut change-status valve"
-    )
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
     mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
         None, description="Mincut not proposed / do-not-operate valve"
     )
@@ -341,9 +338,7 @@ class MincutEndData(Data):
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
     mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
-    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(
-        None, description="Mincut change-status valve"
-    )
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
     mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
         None, description="Mincut not proposed / do-not-operate valve"
     )
@@ -410,10 +405,126 @@ class MincutDeleteResponse(BaseAPIResponse[Dict]):
 # region Mincut list (v2) response models
 
 
-class GetMincutsData(BaseModel):
+class _V2Model(BaseModel):
+    """v2 table-dump models reject unknown columns so the OpenAPI contract stays the schema."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MincutState(IntEnum):
+    PLANIFIED = 0
+    IN_PROGRESS = 1
+    FINISHED = 2
+    CANCELED = 3
+    ONGOING_PLANNING = 4
+    CONFLICT = 5
+
+
+class MincutClass(IntEnum):
+    NETWORK = 1
+    CONNEC = 2
+    HYDROMETER = 3
+
+
+class GeoJsonGeometry(BaseModel):
+    """GeoJSON geometry from ST_AsGeoJSON (EPSG:4326). extra=allow for optional crs/bbox."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str
+    coordinates: Any
+
+
+class OmMincut(_V2Model):
+    """One om_mincut row. Geometry fields are omitted unless includeGeometry=true."""
+
+    id: int
+    work_order: Optional[str] = None
+    mincut_state: Optional[MincutState] = None
+    mincut_class: Optional[MincutClass] = None
+    mincut_type: Optional[str] = None
+    received_date: Optional[date] = None
+    expl_id: Optional[int] = None
+    macroexpl_id: Optional[int] = None
+    muni_id: Optional[int] = None
+    postcode: Optional[str] = None
+    streetaxis_id: Optional[str] = None
+    postnumber: Optional[str] = None
+    anl_cause: Optional[str] = None
+    anl_tstamp: Optional[datetime] = None
+    anl_user: Optional[str] = None
+    anl_descript: Optional[str] = None
+    anl_feature_id: Optional[int] = None
+    anl_feature_type: Optional[str] = None
+    forecast_start: Optional[datetime] = None
+    forecast_end: Optional[datetime] = None
+    assigned_to: Optional[str] = None
+    exec_start: Optional[datetime] = None
+    exec_end: Optional[datetime] = None
+    exec_user: Optional[str] = None
+    exec_descript: Optional[str] = None
+    exec_from_plot: Optional[float] = None
+    exec_depth: Optional[float] = None
+    exec_appropiate: Optional[bool] = None
+    notified: Optional[Any] = None
+    output: Optional[Any] = None
+    modification_date: Optional[datetime] = None
+    chlorine: Optional[str] = None
+    turbidity: Optional[str] = None
+    minsector_id: Optional[int] = None
+    reagent_lot: Optional[str] = None
+    equipment_code: Optional[str] = None
+    modification_user: Optional[str] = None
+    shutoff_required: Optional[bool] = None
+    anl_the_geom: Optional[GeoJsonGeometry] = None
+    exec_the_geom: Optional[GeoJsonGeometry] = None
+    polygon_the_geom: Optional[GeoJsonGeometry] = None
+
+
+class OmMincutArc(_V2Model):
+    id: int
+    arc_id: int
+    minsector_id: Optional[int] = None
+    the_geom: Optional[GeoJsonGeometry] = None
+
+
+class OmMincutValve(_V2Model):
+    id: int
+    node_id: int
+    closed: Optional[bool] = None
+    broken: Optional[bool] = None
+    unaccess: Optional[bool] = None
+    proposed: Optional[bool] = None
+    flag: Optional[bool] = None
+    to_arc: Optional[int] = None
+    changestatus: Optional[bool] = None
+    the_geom: Optional[GeoJsonGeometry] = None
+
+
+class OmMincutNode(_V2Model):
+    id: int
+    node_id: int
+    node_type: Optional[str] = None
+    minsector_id: Optional[int] = None
+    the_geom: Optional[GeoJsonGeometry] = None
+
+
+class OmMincutConnec(_V2Model):
+    id: int
+    connec_id: int
+    customer_code: Optional[str] = None
+    the_geom: Optional[GeoJsonGeometry] = None
+
+
+class OmMincutHydrometer(_V2Model):
+    id: int
+    hydrometer_id: int
+
+
+class GetMincutsData(_V2Model):
     """Rows from om_mincut (geometry omitted unless includeGeometry=true)"""
 
-    mincuts: List[Dict[str, Any]] = Field(
+    mincuts: List[OmMincut] = Field(
         default_factory=list,
         description=(
             "List of mincuts. Geometry fields (anl_the_geom, exec_the_geom, polygon_the_geom) "
@@ -422,15 +533,33 @@ class GetMincutsData(BaseModel):
     )
 
 
-class GetMincutsBody(Body[GetMincutsData]):
-    """Body for mincut list response"""
-
-    form: Optional[Dict] = Field({}, description="Form")
-    feature: Optional[Dict] = Field({}, description="Feature")
-
-
-class GetMincutsResponse(BaseAPIResponse[GetMincutsBody]):
+class GetMincutsResponse(BaseAPIResponse[GetMincutsData]):
     """Response model for mincut list (v2)"""
+
+    pass
+
+
+class GetMincutData(_V2Model):
+    """One om_mincut row plus related network rows (geometry omitted unless includeGeometry=true)"""
+
+    mincut: OmMincut
+    arcs: List[OmMincutArc] = Field(default_factory=list)
+    valves: List[OmMincutValve] = Field(default_factory=list)
+    nodes: List[OmMincutNode] = Field(default_factory=list)
+    connecs: List[OmMincutConnec] = Field(default_factory=list)
+    hydrometers: List[OmMincutHydrometer] = Field(default_factory=list)
+    conflicts: List[int] = Field(
+        default_factory=list,
+        description="Other mincut ids in the same om_mincut_conflict group",
+    )
+    bbox: Optional[ExtentModel] = Field(
+        None,
+        description="Bounding box of the mincut in EPSG:4326 (x1/y1/x2/y2), independent of includeGeometry",
+    )
+
+
+class GetMincutResponse(BaseAPIResponse[GetMincutData]):
+    """Response model for mincut detail (v2)"""
 
     pass
 

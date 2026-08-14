@@ -17,6 +17,8 @@ from app.db.execution import execute_sql
 from app.schemas.common import CoordinatesModel
 from app.schemas.om.mincut_models import (
     MINCUT_CAUSE_VALUES,
+    GetMincutData,
+    GetMincutsData,
     MincutExecParams,
     MincutFilterFieldsModel,
     MincutPlanParams,
@@ -24,11 +26,65 @@ from app.schemas.om.mincut_models import (
 )
 from app.services.basic_service import BasicService
 from app.services.context import ServiceContext
-from app.services.helpers import accepted_data_response
+from app.services.helpers import accepted_v2_response
 from app.services.procedure import run_procedure
 from app.utils.body import create_body_dict
 
 _OM_MINCUT_GEOM_COLUMNS = ("anl_the_geom", "exec_the_geom", "polygon_the_geom")
+
+
+def _mincut_json(table: str) -> str:
+    geoms = ", ".join(
+        f"'{col}', ST_AsGeoJSON(ST_Transform({table}.{col}, 4326))::jsonb" for col in _OM_MINCUT_GEOM_COLUMNS
+    )
+    return f"""
+        (to_jsonb({table}) - %s::text[])
+        || CASE WHEN params.include_geometry THEN jsonb_build_object({geoms})
+           ELSE jsonb_build_object() END
+    """
+
+
+def _bbox_sql() -> str:
+    return """
+        (SELECT CASE
+            WHEN e IS NULL THEN NULL
+            ELSE jsonb_build_object(
+                'x1', ST_XMin(e),
+                'y1', ST_YMin(e),
+                'x2', ST_XMax(e),
+                'y2', ST_YMax(e)
+            )
+         END
+         FROM (
+            SELECT ST_Extent(ST_Transform(g, 4326)) AS e
+            FROM (
+                SELECT a.the_geom AS g FROM {schema}.om_mincut_arc a WHERE a.result_id = m.id
+                UNION ALL
+                SELECT v.the_geom FROM {schema}.om_mincut_valve v WHERE v.result_id = m.id
+                UNION ALL
+                SELECT m.anl_the_geom
+                UNION ALL
+                SELECT m.exec_the_geom
+                UNION ALL
+                SELECT m.polygon_the_geom
+            ) geoms
+            WHERE g IS NOT NULL
+         ) extent)
+    """
+
+
+def _child_agg(table: str, order_by: str) -> str:
+    return f"""
+        (SELECT COALESCE(jsonb_agg(
+            (to_jsonb(t) - 'result_id' - 'the_geom')
+            || CASE WHEN params.include_geometry THEN jsonb_build_object(
+                'the_geom', ST_AsGeoJSON(ST_Transform(t.the_geom, 4326))::jsonb
+            ) ELSE jsonb_build_object() END
+            ORDER BY t.{order_by}
+        ), '[]'::jsonb)
+         FROM {{schema}}.{table} t
+         WHERE t.result_id = m.id)
+    """
 
 
 class MincutService:
@@ -60,47 +116,80 @@ class MincutService:
         return await self._basic.get_list("tbl_mincut_manager", filter_fields=filter_fields)
 
     async def get_mincuts_v2(self, include_geometry: bool = False) -> dict:
-        geom_keys = list(_OM_MINCUT_GEOM_COLUMNS)
-        if include_geometry:
-            sql = """
-                SELECT (
-                    (to_jsonb(m) - %s::text[])
-                    || jsonb_build_object(
-                        'anl_the_geom',
-                        CASE
-                            WHEN m.anl_the_geom IS NULL THEN NULL
-                            ELSE ST_AsGeoJSON(ST_Transform(m.anl_the_geom, 4326))::jsonb
-                        END,
-                        'exec_the_geom',
-                        CASE
-                            WHEN m.exec_the_geom IS NULL THEN NULL
-                            ELSE ST_AsGeoJSON(ST_Transform(m.exec_the_geom, 4326))::jsonb
-                        END,
-                        'polygon_the_geom',
-                        CASE
-                            WHEN m.polygon_the_geom IS NULL THEN NULL
-                            ELSE ST_AsGeoJSON(ST_Transform(m.polygon_the_geom, 4326))::jsonb
-                        END
-                    )
-                ) AS mincut
-                FROM {schema}.om_mincut m
-            """
-        else:
-            sql = """
-                SELECT (to_jsonb(m) - %s::text[]) AS mincut
-                FROM {schema}.om_mincut m
-            """
+        sql = f"""
+            WITH params AS (SELECT %s::boolean AS include_geometry)
+            SELECT {_mincut_json("m")} AS mincut
+            FROM {{schema}}.om_mincut m
+            CROSS JOIN params
+        """
         rows = await execute_sql(
             self.ctx.logger,
             self.ctx.db_manager,
             sql,
-            parameters=(geom_keys,),
+            parameters=(include_geometry, list(_OM_MINCUT_GEOM_COLUMNS)),
             schema=self.ctx.schema,
             user=self.ctx.user_id,
             db_role=self.ctx.db_role,
         )
-        mincuts = [row["mincut"] for row in rows]
-        return await accepted_data_response(self.ctx, "Fetched mincuts successfully", {"mincuts": mincuts})
+        payload = GetMincutsData.model_validate({"mincuts": [row["mincut"] for row in rows]})
+        return await accepted_v2_response(
+            self.ctx,
+            "Fetched mincuts successfully",
+            payload.model_dump(mode="json", exclude_unset=True),
+        )
+
+    async def get_mincut_v2(self, mincut_id: int, include_geometry: bool = False) -> dict:
+        sql = f"""
+            WITH params AS (SELECT %s::boolean AS include_geometry)
+            SELECT
+                {_mincut_json("m")} AS mincut,
+                {_child_agg("om_mincut_arc", "arc_id")} AS arcs,
+                {_child_agg("om_mincut_valve", "node_id")} AS valves,
+                {_child_agg("om_mincut_node", "node_id")} AS nodes,
+                {_child_agg("om_mincut_connec", "connec_id")} AS connecs,
+                (SELECT COALESCE(jsonb_agg(to_jsonb(h) - 'result_id' ORDER BY h.id), '[]'::jsonb)
+                 FROM {{schema}}.om_mincut_hydrometer h WHERE h.result_id = m.id) AS hydrometers,
+                (SELECT COALESCE(
+                    jsonb_agg(omc.mincut_id) FILTER (WHERE omc.mincut_id <> m.id),
+                    '[]'::jsonb)
+                 FROM {{schema}}.om_mincut_conflict omc
+                 WHERE omc.id = (
+                    SELECT id FROM {{schema}}.om_mincut_conflict WHERE mincut_id = m.id LIMIT 1
+                 )) AS conflicts,
+                {_bbox_sql()} AS bbox
+            FROM {{schema}}.om_mincut m
+            CROSS JOIN params
+            WHERE m.id = %s
+        """
+        rows = await execute_sql(
+            self.ctx.logger,
+            self.ctx.db_manager,
+            sql,
+            parameters=(include_geometry, list(_OM_MINCUT_GEOM_COLUMNS), mincut_id),
+            schema=self.ctx.schema,
+            user=self.ctx.user_id,
+            db_role=self.ctx.db_role,
+        )
+        if not rows:
+            raise LookupError(f"Mincut {mincut_id} not found")
+        row = rows[0]
+        payload = GetMincutData.model_validate(
+            {
+                "mincut": row["mincut"],
+                "arcs": row["arcs"] or [],
+                "valves": row["valves"] or [],
+                "nodes": row["nodes"] or [],
+                "connecs": row["connecs"] or [],
+                "hydrometers": row["hydrometers"] or [],
+                "conflicts": row["conflicts"] or [],
+                "bbox": row["bbox"],
+            }
+        )
+        return await accepted_v2_response(
+            self.ctx,
+            "Fetched mincut successfully",
+            payload.model_dump(mode="json", exclude_unset=True),
+        )
 
     async def get_mincut_dialog(self, mincut_id: int) -> dict:
         body = create_body_dict(device=self.ctx.device, extras={"mincutId": mincut_id}, cur_user=self.ctx.user_id)
