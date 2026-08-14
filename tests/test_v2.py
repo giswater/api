@@ -36,6 +36,23 @@ def _assert_bbox(bbox) -> None:
     assert -90 <= bbox["y2"] <= 90
 
 
+def _assert_bbox_or_none(bbox) -> None:
+    if bbox is not None:
+        _assert_bbox(bbox)
+
+
+def _assert_init(point) -> None:
+    assert point is not None
+    assert set(point) == {"x", "y"}
+    assert -180 <= point["x"] <= 180
+    assert -90 <= point["y"] <= 90
+
+
+def _assert_init_or_none(point) -> None:
+    if point is not None:
+        _assert_init(point)
+
+
 def _assert_geojson_or_none(value) -> None:
     if value is None:
         return
@@ -56,6 +73,20 @@ def test_om_mincut_state_roundtrip():
     assert dumped["mincut_state"] == 0
     assert dumped["mincut_class"] == 1
     assert "anl_the_geom" not in dumped
+    assert "bbox" not in dumped
+    assert "init" not in dumped
+
+
+def test_om_mincut_bbox_roundtrip():
+    row = OmMincut.model_validate({"id": 1, "bbox": {"x1": 1, "y1": 2, "x2": 3, "y2": 4}})
+    dumped = row.model_dump(mode="json", exclude_unset=True)
+    assert dumped["bbox"] == {"x1": 1.0, "y1": 2.0, "x2": 3.0, "y2": 4.0}
+
+
+def test_om_mincut_init_roundtrip():
+    row = OmMincut.model_validate({"id": 1, "init": {"x": 2.1, "y": 41.4}})
+    dumped = row.model_dump(mode="json", exclude_unset=True)
+    assert dumped["init"] == {"x": 2.1, "y": 41.4}
 
 
 def test_v2_mincut_responses_use_flat_body():
@@ -69,7 +100,7 @@ def test_v2_mincut_responses_use_flat_body():
         {
             **envelope,
             "body": {
-                "mincut": {"id": 1},
+                "mincut": {"id": 1, "bbox": {"x1": 1, "y1": 2, "x2": 3, "y2": 4}, "init": {"x": 2.1, "y": 41.4}},
                 "arcs": [],
                 "valves": [],
                 "nodes": [],
@@ -79,6 +110,22 @@ def test_v2_mincut_responses_use_flat_body():
             },
         }
     )
+    with pytest.raises(ValidationError):
+        GetMincutResponse.model_validate(
+            {
+                **envelope,
+                "body": {
+                    "mincut": {"id": 1},
+                    "arcs": [],
+                    "valves": [],
+                    "nodes": [],
+                    "connecs": [],
+                    "hydrometers": [],
+                    "conflicts": [],
+                    "bbox": {"x1": 1, "y1": 2, "x2": 3, "y2": 4},
+                },
+            }
+        )
     with pytest.raises(ValidationError):
         GetMincutsResponse.model_validate(
             {
@@ -118,6 +165,9 @@ def test_v2_health_and_openapi_include_mincuts(client: TestClient):
     assert "form" not in schemas["GetMincutsData"]["properties"]
     assert "data" not in schemas["GetMincutsData"]["properties"]
     assert "mincut" in schemas["GetMincutData"]["properties"]
+    assert "bbox" not in schemas["GetMincutData"]["properties"]
+    assert "bbox" in schemas["OmMincut"]["properties"]
+    assert "init" in schemas["OmMincut"]["properties"]
     assert "form" not in schemas["GetMincutData"]["properties"]
     assert "data" not in schemas["GetMincutData"]["properties"]
     assert schemas["GetMincutsResponse"]["properties"]["body"]["$ref"].endswith("/GetMincutsData")
@@ -138,6 +188,8 @@ def test_v2_get_mincuts(client: TestClient, default_params):
     for row in mincuts:
         for col in _GEOM_COLUMNS:
             assert col not in row
+        _assert_bbox_or_none(row.get("bbox"))
+        _assert_init_or_none(row.get("init"))
 
 
 @pytest.mark.ws
@@ -157,6 +209,8 @@ def test_v2_get_mincuts_include_geometry(client: TestClient, default_params):
             assert col in row
             geom = row[col]
             _assert_geojson_or_none(geom)
+        _assert_bbox_or_none(row.get("bbox"))
+        _assert_init_or_none(row.get("init"))
 
 
 @pytest.mark.ws
@@ -183,7 +237,10 @@ def test_v2_get_mincut(client: TestClient, default_params):
         for sibling_id in payload["conflicts"]:
             assert isinstance(sibling_id, int)
             assert sibling_id != mincut_id
-        _assert_bbox(payload["bbox"])
+        _assert_bbox(payload["mincut"]["bbox"])
+        _assert_init(payload["mincut"]["init"])
+        assert "bbox" not in payload
+        assert "init" not in payload
     finally:
         _delete_mincut(client, default_params, mincut_id)
 
@@ -209,7 +266,10 @@ def test_v2_get_mincut_include_geometry(client: TestClient, default_params):
                 _assert_geojson_or_none(row["the_geom"])
         for row in payload["hydrometers"]:
             assert "the_geom" not in row
-        _assert_bbox(payload["bbox"])
+        _assert_bbox(payload["mincut"]["bbox"])
+        _assert_init(payload["mincut"]["init"])
+        assert "bbox" not in payload
+        assert "init" not in payload
     finally:
         _delete_mincut(client, default_params, mincut_id)
 

@@ -21,6 +21,7 @@ from ..common import (
     Info,
     FilterFieldModel,
     GwField,
+    PointModel,
 )
 
 # region Value mappings
@@ -436,7 +437,7 @@ class GeoJsonGeometry(BaseModel):
 
 
 class OmMincut(_V2Model):
-    """One om_mincut row. Geometry fields are omitted unless includeGeometry=true."""
+    """One om_mincut row. Full geometry fields are omitted unless includeGeometry=true."""
 
     id: int
     work_order: Optional[str] = None
@@ -479,6 +480,14 @@ class OmMincut(_V2Model):
     anl_the_geom: Optional[GeoJsonGeometry] = None
     exec_the_geom: Optional[GeoJsonGeometry] = None
     polygon_the_geom: Optional[GeoJsonGeometry] = None
+    init: Optional[PointModel] = Field(
+        None,
+        description="Analysis init point in EPSG:4326 (x/y), independent of includeGeometry",
+    )
+    bbox: Optional[ExtentModel] = Field(
+        None,
+        description="Bounding box of the mincut in EPSG:4326 (x1/y1/x2/y2), independent of includeGeometry",
+    )
 
 
 class OmMincutArc(_V2Model):
@@ -527,7 +536,8 @@ class GetMincutsData(_V2Model):
     mincuts: List[OmMincut] = Field(
         default_factory=list,
         description=(
-            "List of mincuts. Geometry fields (anl_the_geom, exec_the_geom, polygon_the_geom) "
+            "List of mincuts. Each row includes a 4326 init point and bbox. "
+            "Geometry fields (anl_the_geom, exec_the_geom, polygon_the_geom) "
             "are GeoJSON geometries in EPSG:4326 when includeGeometry=true"
         ),
     )
@@ -551,10 +561,6 @@ class GetMincutData(_V2Model):
     conflicts: List[int] = Field(
         default_factory=list,
         description="Other mincut ids in the same om_mincut_conflict group",
-    )
-    bbox: Optional[ExtentModel] = Field(
-        None,
-        description="Bounding box of the mincut in EPSG:4326 (x1/y1/x2/y2), independent of includeGeometry",
     )
 
 

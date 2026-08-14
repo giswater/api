@@ -23,7 +23,7 @@ _INCLUDE_GEOMETRY_DESCRIPTION = (
 @router.get(
     "/mincuts",
     description=(
-        "Returns a list of mincuts from om_mincut. "
+        "Returns a list of mincuts from om_mincut, each with a 4326 init point and bounding box. "
         "Geometry columns are omitted by default; pass includeGeometry=true to receive them as GeoJSON (EPSG:4326)."
     ),
     response_model=GetMincutsResponse,
@@ -45,7 +45,7 @@ async def get_mincuts(
     "/mincuts/{mincut_id}",
     description=(
         "Returns one mincut from om_mincut plus its related arcs, valves, nodes, connecs, "
-        "hydrometers, conflict sibling ids, and a 4326 bounding box. "
+        "hydrometers, and conflict sibling ids. The mincut row includes a 4326 init point and bounding box. "
         "Geometry columns are omitted by default; pass includeGeometry=true to receive them as GeoJSON (EPSG:4326)."
     ),
     response_model=GetMincutResponse,

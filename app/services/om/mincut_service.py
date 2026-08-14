@@ -33,19 +33,18 @@ from app.utils.body import create_body_dict
 _OM_MINCUT_GEOM_COLUMNS = ("anl_the_geom", "exec_the_geom", "polygon_the_geom")
 
 
-def _mincut_json(table: str) -> str:
-    geoms = ", ".join(
-        f"'{col}', ST_AsGeoJSON(ST_Transform({table}.{col}, 4326))::jsonb" for col in _OM_MINCUT_GEOM_COLUMNS
-    )
+def _init_sql(table: str) -> str:
     return f"""
-        (to_jsonb({table}) - %s::text[])
-        || CASE WHEN params.include_geometry THEN jsonb_build_object({geoms})
-           ELSE jsonb_build_object() END
+        (SELECT CASE
+            WHEN g IS NULL THEN NULL
+            ELSE jsonb_build_object('x', ST_X(g), 'y', ST_Y(g))
+         END
+         FROM (SELECT ST_Transform({table}.anl_the_geom, 4326) AS g) p)
     """
 
 
-def _bbox_sql() -> str:
-    return """
+def _bbox_sql(table: str) -> str:
+    return f"""
         (SELECT CASE
             WHEN e IS NULL THEN NULL
             ELSE jsonb_build_object(
@@ -58,18 +57,33 @@ def _bbox_sql() -> str:
          FROM (
             SELECT ST_Extent(ST_Transform(g, 4326)) AS e
             FROM (
-                SELECT a.the_geom AS g FROM {schema}.om_mincut_arc a WHERE a.result_id = m.id
+                SELECT a.the_geom AS g FROM {{schema}}.om_mincut_arc a WHERE a.result_id = {table}.id
                 UNION ALL
-                SELECT v.the_geom FROM {schema}.om_mincut_valve v WHERE v.result_id = m.id
+                SELECT v.the_geom FROM {{schema}}.om_mincut_valve v WHERE v.result_id = {table}.id
                 UNION ALL
-                SELECT m.anl_the_geom
+                SELECT {table}.anl_the_geom
                 UNION ALL
-                SELECT m.exec_the_geom
+                SELECT {table}.exec_the_geom
                 UNION ALL
-                SELECT m.polygon_the_geom
+                SELECT {table}.polygon_the_geom
             ) geoms
             WHERE g IS NOT NULL
          ) extent)
+    """
+
+
+def _mincut_json(table: str) -> str:
+    geoms = ", ".join(
+        f"'{col}', ST_AsGeoJSON(ST_Transform({table}.{col}, 4326))::jsonb" for col in _OM_MINCUT_GEOM_COLUMNS
+    )
+    return f"""
+        (to_jsonb({table}) - %s::text[])
+        || CASE WHEN params.include_geometry THEN jsonb_build_object({geoms})
+           ELSE jsonb_build_object() END
+        || jsonb_build_object(
+            'init', {_init_sql(table)},
+            'bbox', {_bbox_sql(table)}
+        )
     """
 
 
@@ -155,8 +169,7 @@ class MincutService:
                  FROM {{schema}}.om_mincut_conflict omc
                  WHERE omc.id = (
                     SELECT id FROM {{schema}}.om_mincut_conflict WHERE mincut_id = m.id LIMIT 1
-                 )) AS conflicts,
-                {_bbox_sql()} AS bbox
+                 )) AS conflicts
             FROM {{schema}}.om_mincut m
             CROSS JOIN params
             WHERE m.id = %s
@@ -182,7 +195,6 @@ class MincutService:
                 "connecs": row["connecs"] or [],
                 "hydrometers": row["hydrometers"] or [],
                 "conflicts": row["conflicts"] or [],
-                "bbox": row["bbox"],
             }
         )
         return await accepted_v2_response(

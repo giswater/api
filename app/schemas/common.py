@@ -43,6 +43,13 @@ class ExtentModel(BaseModel):
     y2: float = Field(..., title="Y2", description="Maximum y coordinate", examples=[4576643.836554766])
 
 
+class PointModel(BaseModel):
+    """Point in EPSG:4326"""
+
+    x: float = Field(..., title="X", description="Longitude", examples=[2.173])
+    y: float = Field(..., title="Y", description="Latitude", examples=[41.385])
+
+
 class Version(BaseModel):
     """Version model"""
 
