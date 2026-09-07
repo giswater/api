@@ -22,7 +22,7 @@ class ProfileService:
         self,
         initial_node_id: int,
         final_node_id: int,
-        middle_nodes: Optional[List[int]],
+        middle_features: Optional[List[int]],
         links_distance: int,
         scale_eh: int,
         scale_ev: int,
@@ -30,7 +30,7 @@ class ProfileService:
         extras = {
             "initNode": initial_node_id,
             "endNode": final_node_id,
-            "midNodes": middle_nodes,
+            "midFeatures": middle_features,
             "linksDistance": links_distance,
             "scale": {"eh": scale_eh, "ev": scale_ev},
         }

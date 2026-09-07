@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`gw_fct_getprofilevalues` extras key** `midNodes` → `midFeatures` (`app/services/om/profile_service.py`).
+
+### Deprecated
+
+- **`middle_nodes`** on `POST /om/profiles` (`DEPRECATED #37`; removal in **2.0.0**). Use `middle_features`. If both are sent, `middle_features` wins.
+
 ## [1.7.0] - 2026-08-05
 
 ### Added
