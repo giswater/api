@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-09-07
+
 ### Changed
 
 - **`gw_fct_getprofilevalues` extras key** `midNodes` → `midFeatures` (`app/routers/om/profile.py`).
