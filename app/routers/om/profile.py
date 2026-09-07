@@ -24,7 +24,14 @@ async def create_profile(
     commons: CommonsDep,
     initial_node_id: int = Body(..., description="Initial node ID", examples=[35]),
     final_node_id: int = Body(..., description="Final node ID", examples=[38]),
-    middle_nodes: Optional[List[int]] = Body(None, description="Middle nodes IDs", examples=[[37]]),
+    middle_features: Optional[List[int]] = Body(None, description="Middle feature IDs", examples=[[37]]),
+    # DEPRECATED #37: remove in 2.0.0; use middle_features
+    middle_nodes: Optional[List[int]] = Body(
+        None,
+        description="Deprecated: use middle_features. Middle feature IDs (formerly assumed to be nodes). Removal in 2.0.0 (#37).",
+        examples=[[37]],
+        deprecated=True,
+    ),
     links_distance: int = Body(..., description="Links distance", examples=[1]),
     scale_eh: int = Body(..., description="Scale EH", examples=[1000]),
     scale_ev: int = Body(..., description="Scale EV", examples=[1000]),
@@ -32,10 +39,18 @@ async def create_profile(
     """Insert one or multiple hydrometers"""
     log = create_log(__name__)
 
+    # DEPRECATED #37: middle_nodes fallback; remove in 2.0.0
+    if middle_features is not None:
+        resolved_middle = middle_features
+    elif middle_nodes is not None:
+        resolved_middle = middle_nodes
+    else:
+        resolved_middle = None
+
     extras = {
         "initNode": initial_node_id,
         "endNode": final_node_id,
-        "midNodes": middle_nodes,
+        "midFeatures": resolved_middle,
         "linksDistance": links_distance,
         "scale": {"eh": scale_eh, "ev": scale_ev},
     }
