@@ -83,7 +83,11 @@ async def get_dma_parameters(
 
 @router.get(
     "/dmas/{dma_id}/connecs",
-    description=("Returns a collection of connecs within a specific DMA, providing details from ve_connec."),
+    description=(
+        "Deprecated: prefer GET /features/connecs?dma_id={dma_id}. "
+        "Returns a collection of connecs within a specific DMA, providing details from ve_connec."
+    ),
+    deprecated=True,
     response_model=GetDmaConnecsResponse,
     response_model_exclude_unset=True,
 )

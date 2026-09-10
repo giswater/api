@@ -10,10 +10,10 @@ Use with [deploy/install.sh](../deploy/install.sh) (recommended), [deploy/.env.p
 - [ ] **DNS multi-tenant only**: `proxy_set_header Host $host;` (tenant id is the left label of the Host); apex `BASE_DOMAIN` → `${API_ROOT}/admin/*`; `*.BASE_DOMAIN` → `${API_ROOT}/v1/*` (default `API_ROOT=/giswater`).
 - [ ] **Single-tenant only**: `SINGLE_TENANT_ID` matches an existing `config/tenants/<id>.env`; admin and tenant API both reachable on the same host/IP under `${API_ROOT}/admin/*` and `${API_ROOT}/v1/*`.
 - [ ] **Secrets**: `ADMIN_PASSWORD` set; Keycloak secrets not in git; DB password least-privilege.
-- [ ] **Postgres**: version matches [compatibility table](../README.md#compatibility); backup/restore tested.
+- [ ] **Postgres / Giswater DB**: version matches [compatibility table](../README.md#compatibility) for this API release; backup/restore tested.
 - [ ] **Pool budget**: `N_tenants × DB_POOL_MAX_SIZE` within Postgres `max_connections`.
 - [ ] **Logging**: `LOG_DB_SAMPLE_RATE=1.0` for full API request audit; lower if the DB log table becomes hot. Use `LOG_HTTP_BODY_CAPTURE=false` only when you must avoid storing payload text; otherwise bodies are truncated via `LOG_DB_MAX_BODY_BYTES`.
-- [ ] **Readiness**: `GISWATER_DB_VERSION_CHECK=true` in prod if you want `/ready` to enforce min Giswater DB (see `GISWATER_DB_MIN_VERSION`).
+- [ ] **Readiness**: `GISWATER_DB_VERSION_CHECK=true` in prod if you want `/ready` to enforce min Giswater DB; set `GISWATER_DB_MIN_VERSION` to the floor you want.
 - [ ] **Gunicorn**: `WEB_CONCURRENCY` set for CPU/RAM; container `start_period` allows pool + DB connect.
 - [ ] **Probes**: liveness `GET ${API_ROOT}/health`; readiness per tenant `GET ${API_ROOT}/v1/ready` (503 if DB or version check fails).
 

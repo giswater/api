@@ -28,6 +28,7 @@ app/
     procedure.py          # run_procedure, ensure_procedure_accepted helpers
     admin/                # tenant_service, user_service
     basic_service.py      # basic GIS endpoints
+    features_service.py   # feature collections (nodes/arcs/links/connecs/gullies)
     crm_service.py        # hydrometer CRUD
     om/                   # flow, profile, mincut, dma, mapzones, waterbalance
     epa/                  # dscenario_service

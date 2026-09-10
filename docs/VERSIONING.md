@@ -15,7 +15,8 @@ There are **three independent version layers**. Keep them separate.
 - **One codebase serving tenants on different DB versions is normal.** Business
   logic lives in `gw_fct_*` DB functions, not in Python branches. The DB version
   is a *tenant capability*, surfaced via [`/ready`](../app/api/v1/endpoints/system.py)
-  and optionally gated by `GISWATER_DB_VERSION_CHECK`.
+  and optionally gated by `GISWATER_DB_VERSION_CHECK` /
+  `GISWATER_DB_MIN_VERSION` (see [README compatibility](../README.md#compatibility)).
 - **Additive Pydantic fields do not need a new URL version.** Adding optional
   response fields or new endpoints is a minor semver bump, still under `/v1`.
 
