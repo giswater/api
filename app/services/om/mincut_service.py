@@ -115,6 +115,7 @@ class MincutService:
     async def valve_unaccess(self, mincut_id: int, valve_id: int, use_psectors: bool) -> dict:
         body = create_body_dict(
             device=self.ctx.device,
+            client_extras={"tiled": True},
             extras={
                 "action": "mincutValveUnaccess",
                 "nodeId": valve_id,
@@ -128,6 +129,7 @@ class MincutService:
     async def valve_toggle_status(self, mincut_id: int, valve_id: int, use_psectors: bool) -> dict:
         body = create_body_dict(
             device=self.ctx.device,
+            client_extras={"tiled": True},
             extras={
                 "action": "mincutChangeValveStatus",
                 "nodeId": valve_id,

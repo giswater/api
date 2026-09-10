@@ -57,6 +57,49 @@ def test_create_profile(
 
 
 @pytest.mark.ud
+def test_create_profile_with_middle_features(client, default_params):
+    assert_ready(client)
+
+    payload = {
+        "initial_node_id": 35,
+        "final_node_id": 38,
+        "middle_features": [37],
+        "links_distance": 1,
+        "scale_eh": 1000,
+        "scale_ev": 1000,
+    }
+
+    response = client.post(api("/om/profiles"), params=default_params, json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "Accepted"
+    assert "body" in data
+
+
+# DEPRECATED #37: remove in 2.0.0 with the middle_nodes shim
+@pytest.mark.ud
+def test_create_profile_with_deprecated_middle_nodes(client, default_params):
+    assert_ready(client)
+
+    payload = {
+        "initial_node_id": 35,
+        "final_node_id": 38,
+        "middle_nodes": [37],
+        "links_distance": 1,
+        "scale_eh": 1000,
+        "scale_ev": 1000,
+    }
+
+    response = client.post(api("/om/profiles"), params=default_params, json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "Accepted"
+    assert "body" in data
+
+
+@pytest.mark.ud
 @pytest.mark.parametrize(
     ("direction", "node_id"),
     [

@@ -1,6 +1,6 @@
 [project]
 name = "giswater-api"
-version = "1.6.2"
+version = "1.7.0"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.135.2",
@@ -13,11 +13,12 @@ dependencies = [
     "alembic==1.16.5",
     "requests==2.33.0",
     "pyproj==3.7.2",
-    "pyjwt[crypto]==2.12.1",
-    "cryptography==46.0.7",
+    "pyjwt[crypto]==2.13.0",
+    "cryptography==50.0.0",
     "bcrypt==4.3.0",
     "fastapi-keycloak==1.1.1",
     "python-dotenv==1.2.2",
+    "python-multipart>=0.0.9",
     "click==8.2.1",
 ]
 
@@ -25,7 +26,7 @@ dependencies = [
 giswater-api = "app.cli.main:main"
 
 [project.optional-dependencies]
-dev = ["pytest==8.3.4", "ruff"]
+dev = ["pytest==9.0.3", "ruff"]
 
 [build-system]
 requires = ["setuptools>=75.0"]

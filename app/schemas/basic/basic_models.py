@@ -56,6 +56,30 @@ class GetFeatureChangesGully(GetFeatureChangesFeature):
     gullyId: int = Field(..., description="Gully ID")
 
 
+class GetFeatureChangesElement(BaseModel):
+    """Get feature changes element model"""
+
+    elementId: int = Field(..., description="Element ID")
+    featureClass: str = Field(..., description="Feature class")
+    serialNumber: Optional[str] = Field(None, description="Serial number")
+    brand: Optional[str] = Field(None, description="Brand")
+    model: Optional[str] = Field(None, description="Model")
+    descript: Optional[str] = Field(None, description="Description")
+    aresepId: Optional[str] = Field(None, description="Aresép ID")
+
+
+class GetFeatureChangesElementNode(GetFeatureChangesElement):
+    """Get feature changes element attached to a node"""
+
+    nodeId: int = Field(..., description="Node ID")
+
+
+class GetFeatureChangesElementConnec(GetFeatureChangesElement):
+    """Get feature changes element attached to a connec"""
+
+    connecId: int = Field(..., description="Connec ID")
+
+
 class GetFeatureChangesData(BaseModel):
     """Get feature changes data"""
 
@@ -65,6 +89,9 @@ class GetFeatureChangesData(BaseModel):
             GetFeatureChangesNode,
             GetFeatureChangesConnec,
             GetFeatureChangesGully,
+            GetFeatureChangesElementNode,
+            GetFeatureChangesElementConnec,
+            GetFeatureChangesElement,
             GetFeatureChangesFeature,
         ]
     ] = Field(..., description="Features")

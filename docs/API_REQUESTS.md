@@ -127,9 +127,53 @@ Each user's `db_role` must exist as a PostgreSQL role (`SET ROLE` on the request
 
 ## Tenant API — `AUTH_MODE=keycloak`
 
-Send a Bearer JWT issued by that tenant's Keycloak realm. The API validates RS256 locally against the tenant IDP public key (audience = tenant `KEYCLOAK_CLIENT_ID`). Swagger OAuth is not wired for multi-tenant; pass the header yourself.
+Send a Bearer JWT issued by that tenant's Keycloak realm. The API validates RS256 locally against the tenant IDP public key (audience = tenant `KEYCLOAK_CLIENT_ID`).
 
-### 1. Obtain a token (password grant example)
+Swagger UI at `${API_ROOT}/v1/docs` exposes **Authorize** with two OAuth2 flows (`keycloakPassword` and `keycloakAuthCode`) backed by the tenant token proxy below. You can also obtain tokens directly from Keycloak.
+
+### 1. Obtain a token via the tenant API proxy
+
+The proxy injects `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` server-side. Callers never send the client secret.
+
+**Password grant** (realm or LDAP user):
+
+```bash
+curl -sS -X POST \
+  -H "Host: test.bgeo360.localhost" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "username=alice" \
+  -d "password=s3cretPass!" \
+  "http://127.0.0.1:8000/giswater/v1/auth/token"
+```
+
+**Authorization code exchange** (after browser redirect from Keycloak):
+
+```bash
+curl -sS -X POST \
+  -H "Host: test.bgeo360.localhost" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=authorization_code" \
+  -d "code=..." \
+  -d "redirect_uri=https://test.example.com/giswater/v1/docs/oauth2-redirect" \
+  -d "code_verifier=..." \
+  "http://127.0.0.1:8000/giswater/v1/auth/token"
+```
+
+**Refresh token**:
+
+```bash
+curl -sS -X POST \
+  -H "Host: test.bgeo360.localhost" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=refresh_token" \
+  -d "refresh_token=..." \
+  "http://127.0.0.1:8000/giswater/v1/auth/token"
+```
+
+Returns Keycloak's JSON body verbatim (`access_token`, `expires_in`, `refresh_token`, …) or OAuth2 errors (`error`, `error_description`).
+
+### 2. Obtain a token directly from Keycloak (alternative)
 
 ```bash
 KEYCLOAK_URL="https://idp.example.com"
@@ -150,7 +194,7 @@ TOKEN=$(curl -sS -X POST \
 
 Use whatever grant your client allows (`password`, `client_credentials`, auth code + refresh, etc.). The API only cares about a valid access token.
 
-### 2. Call the tenant API
+### 3. Call the tenant API
 
 ```bash
 curl -sS \

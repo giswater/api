@@ -12,7 +12,7 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,7 @@ from .api.v1.router import register_v1, tenant_openapi_routes
 from .auth import verify_admin
 from .core.config import global_settings
 from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX
+from .core.openapi import apply_tenant_security
 from .middleware.request_logging import request_logging_middleware
 from .schemas.common import GwErrorResponse
 from .tenancy import state
@@ -126,15 +127,32 @@ async def tenant_openapi_json(request: Request):
         routes=routes,
         servers=[{"url": root_path}],
     )
+    schema = apply_tenant_security(schema, tenant, root_path)
     return JSONResponse(schema)
 
 
 @tenant_app.get("/docs", include_in_schema=False)
-async def tenant_docs():
+async def tenant_docs(request: Request):
+    tenant: Tenant = request.state.tenant
+    init_oauth = None
+    if tenant.settings.auth_mode == "keycloak":
+        init_oauth = {
+            "clientId": tenant.settings.keycloak_client_id,
+            "usePkceWithAuthorizationCodeGrant": True,
+            "scopes": "openid profile email",
+        }
     return get_swagger_ui_html(
         openapi_url=f"{TENANT_PREFIX}/openapi.json",
         title=f"{TITLE} - docs",
+        oauth2_redirect_url=f"{TENANT_PREFIX}/docs/oauth2-redirect",
+        init_oauth=init_oauth,
+        swagger_ui_parameters={"persistAuthorization": True},
     )
+
+
+@tenant_app.get("/docs/oauth2-redirect", include_in_schema=False)
+async def tenant_docs_oauth2_redirect():
+    return get_swagger_ui_oauth2_redirect_html()
 
 
 @tenant_app.get("/favicon.ico", include_in_schema=False)

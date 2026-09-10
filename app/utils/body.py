@@ -67,7 +67,10 @@ def create_body_dict(
             "client": client,
             "form": form,
             "feature": feature,
-            "data": {"filterFields": filter_fields, "pageInfo": page_info, **extras},
+            # pageInfo must be JSON null when unused: DB functions such as
+            # gw_fct_getfeatures treat any non-null pageInfo as "paginated mode"
+            # and skip their legacy camelCase projection.
+            "data": {"filterFields": filter_fields, "pageInfo": page_info or None, **extras},
         },
         default=json_default,
     )
