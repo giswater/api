@@ -124,6 +124,20 @@ def test_delete_hydrometers_bulk(client, default_params):
     assert "body" in data
 
 
+def test_list_hydrometers(client, default_params):
+    assert_ready(client)
+
+    code = _new_hydrometer_code()
+    _insert_hydrometers(client, default_params, _hydrometer_payload(code))
+
+    response = client.get(api("/crm/hydrometers"), params={**default_params, "code": code})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "Accepted"
+    hydrometers = ((data.get("body") or {}).get("data") or {}).get("hydrometers") or []
+    assert any(row.get("code") == code for row in hydrometers if isinstance(row, dict))
+
+
 @pytest.mark.destructive
 def test_replace_all_hydrometers(client, default_params):
     assert_ready(client)

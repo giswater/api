@@ -31,6 +31,7 @@ from .tenancy.host_middleware import host_middleware
 from .tenancy.registry import Tenant, TenantRegistry
 from .utils.log_setup import create_log
 from .utils.plugins import load_plugins
+from .mcp import runtime as mcp_runtime
 
 TITLE = "Giswater API"
 VERSION = pkg_version("giswater-api")
@@ -192,5 +193,14 @@ for _app in (parent, tenant_app, admin_app):
     register_exception_handlers(_app)
 
 load_plugins(tenant_app)
+
+mcp_runtime.configure(root_app=parent)
+tenant_app.add_api_route(
+    "/mcp",
+    mcp_runtime.mcp_http_endpoint,
+    methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
+    include_in_schema=False,
+)
+tenant_app.mount("/mcp", mcp_runtime.mcp_dispatch)
 
 app = parent

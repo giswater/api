@@ -132,6 +132,7 @@ class TenantOut(BaseModel):
             "crm": s.api_crm,
             "epa": s.api_epa,
             "features": s.api_features,
+            "mcp": s.api_mcp,
         }
         db = DbSettingsOut(
             host=s.db_host,
@@ -240,6 +241,7 @@ def build_tenant_settings_from_input(
         api_crm=_api("crm"),
         api_epa=_api("epa"),
         api_features=_api("features"),
+        api_mcp=_api("mcp"),
         db_host=db.host,
         db_port=db.port,
         db_name=db.name,

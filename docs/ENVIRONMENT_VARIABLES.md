@@ -66,6 +66,15 @@ Used only when evaluating tenant **`GET ${API_ROOT}/v1/ready`** (after the datab
 | `GISWATER_DB_VERSION_CHECK` | `false` | When `true`, readiness compares `{DB_SCHEMA}.sys_version.giswater` to `GISWATER_DB_MIN_VERSION`. Returns **503** if missing or below minimum. |
 | `GISWATER_DB_MIN_VERSION` | `4.17.0` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Default matches [README compatibility](../README.md#compatibility). Override per deployment based on active endpoints. |
 
+### MCP
+
+Curated Model Context Protocol server mounted at `${API_ROOT}/v1/mcp/` (Streamable HTTP). Each tenant that enables it gets its own isolated FastMCP instance. Clients must authenticate with the same `Authorization` header the tenant `AUTH_MODE` expects.
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `MCP_ENABLED` | `true` | Process-wide switch. When `false`, `/mcp` returns 404 for every tenant. |
+| `MCP_TIMEOUT` | `60` | Seconds allowed for each in-process loopback call from an MCP tool into the REST API. |
+
 ### Rate limiting
 
 Applied by dependencies on selected routes (see [`app/utils/utils.py`](../app/utils/utils.py) `create_rate_limiter`).
@@ -145,6 +154,7 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_CRM` | `false` | CRM / hydrometer-style endpoints. |
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
 | `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, `/features/arcs`, …; list, GeoJSON, by-id fields/form/geojson). Needs Giswater DB ≥ 4.17.0. |
+| `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
 
 ### Database
 

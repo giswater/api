@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Curated MCP server** at `${API_ROOT}/v1/mcp/` (Streamable HTTP). One FastMCP instance per tenant, task-shaped tools over the REST API, gated by process `MCP_ENABLED` and per-tenant `API_MCP`.
+- **`GET ${API_ROOT}/v1/schemas`**: list Giswater project schemas (`sys_version`) with `project_type` and version.
+- **`GET ${API_ROOT}/v1/crm/hydrometers`**: read hydrometers (`code` / `connecId` / `dmaId` / `limit`).
 - **`/features` endpoints**: typed filters for nodes/arcs/links/connecs/gullies (list + GeoJSON collection + by-id fields, form, and GeoJSON Feature), gated by `API_FEATURES`.
 
 ### Changed

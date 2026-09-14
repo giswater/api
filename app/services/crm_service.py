@@ -7,8 +7,15 @@ or (at your option) any later version.
 
 from __future__ import annotations
 
+from fastapi import HTTPException
+from psycopg import sql
+from psycopg.rows import dict_row
+
+from app.core.exceptions import DatabaseUnavailableError
+from app.db.execution import execute_sql_select
 from app.schemas.crm.crm_models import HydrometerCreate, HydrometerUpdate
 from app.services.context import ServiceContext
+from app.services.helpers import accepted_data_response
 from app.services.procedure import run_procedure
 from app.utils.body import create_body_dict
 
@@ -24,6 +31,81 @@ class CrmService:
             cur_user=self.ctx.user_id,
         )
         return await run_procedure(self.ctx, "gw_fct_set_hydrometers", body)
+
+    async def list_hydrometers(
+        self,
+        *,
+        code: str | None = None,
+        connec_id: int | None = None,
+        dma_id: int | None = None,
+        limit: int = 100,
+    ) -> dict:
+        if connec_id is None and dma_id is None:
+            clauses: list[str] = []
+            params: list = []
+            if code:
+                clauses.append("code = %s")
+                params.append(code)
+            where = " AND ".join(clauses) if clauses else "TRUE"
+            where = f"{where} LIMIT {int(limit)}"
+            rows = await execute_sql_select(
+                self.ctx.logger,
+                self.ctx.db_manager,
+                table_name="v_hydrometer",
+                columns=None,
+                where_clause=where,
+                parameters=tuple(params) if params else None,
+                schema=self.ctx.schema,
+                user=self.ctx.user_id,
+                db_role=self.ctx.db_role,
+            )
+        else:
+            rows = await self._list_hydrometers_joined(code=code, connec_id=connec_id, dma_id=dma_id, limit=limit)
+        return await accepted_data_response(
+            self.ctx,
+            "Fetched hydrometers successfully",
+            {"hydrometers": rows, "count": len(rows)},
+        )
+
+    async def _list_hydrometers_joined(
+        self,
+        *,
+        code: str | None,
+        connec_id: int | None,
+        dma_id: int | None,
+        limit: int,
+    ) -> list[dict]:
+        schema_name = self.ctx.schema
+        clauses = ["TRUE"]
+        params: list = []
+        if code:
+            clauses.append("h.code = %s")
+            params.append(code)
+        if connec_id is not None:
+            clauses.append("f.feature_id = %s")
+            params.append(connec_id)
+        if dma_id is not None:
+            clauses.append("c.dma_id = %s")
+            params.append(dma_id)
+        query = sql.SQL(
+            "SELECT h.* FROM {schema}.v_hydrometer h "
+            "LEFT JOIN {schema}.vf_hydrometer f ON f.hydrometer_id = h.hydrometer_id "
+            "LEFT JOIN {schema}.ve_connec c ON c.connec_id = f.feature_id "
+            "WHERE {where} LIMIT {limit}"
+        ).format(
+            schema=sql.Identifier(schema_name),
+            where=sql.SQL(" AND ").join(sql.SQL(c) for c in clauses),
+            limit=sql.Literal(int(limit)),
+        )
+        async with self.ctx.db_manager.get_db() as conn:
+            if conn is None:
+                raise DatabaseUnavailableError()
+            try:
+                async with conn.cursor(row_factory=dict_row) as cursor:
+                    await cursor.execute(query, tuple(params))
+                    return await cursor.fetchall()
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     async def insert_hydrometers(self, hydrometers: list[HydrometerCreate]) -> dict:
         hydrometers_data = [h.model_dump(mode="json", exclude_unset=True) for h in hydrometers]

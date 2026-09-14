@@ -5,15 +5,32 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from typing import List, Union
+from typing import List, Optional, Union
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
 from app.api.deps import CommonsDep, get_service_context
 from app.schemas.crm.crm_models import HydrometerCreate, HydrometerResponse, HydrometerUpdate
 from app.services.crm_service import CrmService
 
 router = APIRouter(prefix="/crm", tags=["CRM"])
+
+
+@router.get(
+    "/hydrometers",
+    description="List hydrometers. Filter by code, connecId, and/or dmaId.",
+    response_model=HydrometerResponse,
+    response_model_exclude_unset=True,
+)
+async def list_hydrometers(
+    commons: CommonsDep,
+    code: Optional[str] = Query(None, description="Hydrometer code"),
+    connec_id: Optional[int] = Query(None, alias="connecId", description="Linked connec id"),
+    dma_id: Optional[int] = Query(None, alias="dmaId", description="DMA id"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum rows to return"),
+):
+    ctx = get_service_context(commons)
+    return await CrmService(ctx).list_hydrometers(code=code, connec_id=connec_id, dma_id=dma_id, limit=limit)
 
 
 @router.post(
