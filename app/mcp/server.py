@@ -14,10 +14,11 @@ from app.mcp.tools import REGISTRY
 from app.tenancy.registry import Tenant
 
 _INSTRUCTIONS = (
-    "Every tool requires a `schema` argument. Call list_schemas first. "
-    "Each schema is one Giswater project, either water supply (WS) or urban drainage (UD). "
-    "Pick the schema matching the user's intent; if it is ambiguous, ask the user which "
-    "schema to use. Never guess. Coordinates are in the project CRS (pass `epsg`), not WGS84 lat/lon."
+    "Call list_schemas first (no arguments). It returns each project's schema name, "
+    "type (WS or UD), giswater version, and epsg. Every other tool requires a `schema` "
+    "argument. Pick the schema matching the user's intent; if it is ambiguous, ask the "
+    "user which schema to use. Never guess. Coordinates are in the project CRS (pass "
+    "`epsg` from list_schemas), not WGS84 lat/lon."
 )
 
 

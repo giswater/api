@@ -41,7 +41,17 @@ class TenantMcp:
     async def start(self) -> None:
         ready = asyncio.Event()
         self._task = asyncio.create_task(self._run(ready))
+
+        def _on_done(task: asyncio.Task) -> None:
+            if not ready.is_set():
+                ready.set()
+
+        self._task.add_done_callback(_on_done)
         await ready.wait()
+        if self._task.done() and not self._task.cancelled():
+            exc = self._task.exception()
+            if exc is not None:
+                raise exc
 
     async def _run(self, ready: asyncio.Event) -> None:
         lifespan = getattr(self.app, "router", None)
@@ -86,7 +96,11 @@ async def get_or_create(tenant: Tenant | None) -> TenantMcp | None:
         mcp = build_tenant_mcp(tenant, _root_app)
         http_app = mcp.http_app(path="/", stateless_http=True)
         entry = TenantMcp(http_app, api=getattr(mcp, "_gw_api", None))
-        await entry.start()
+        try:
+            await entry.start()
+        except Exception:
+            await entry.aclose()
+            raise
         tenant.mcp = entry
         return entry
 

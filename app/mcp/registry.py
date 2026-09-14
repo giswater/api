@@ -11,11 +11,18 @@ import functools
 import inspect
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
+
+from pydantic import Field
 
 CURRENT_MCP_TOOL: ContextVar[str | None] = ContextVar("current_mcp_tool", default=None)
 
 REGISTRY: list[ToolSpec] = []
+
+SchemaName = Annotated[
+    str,
+    Field(description="Giswater project schema. Call list_schemas first; never guess."),
+]
 
 
 @dataclass(frozen=True)
@@ -42,8 +49,14 @@ class ToolSpec:
         return bound
 
 
-def tool(*, feature: str | None = None, read_only: bool = False, destructive: bool = False, idempotent: bool = True):
-    """Register a curated MCP tool. ``feature`` is a TenantSettings ``api_*`` flag."""
+def tool(
+    *, feature: str | None = None, read_only: bool = False, destructive: bool = False, idempotent: bool | None = None
+):
+    """Register a curated MCP tool. ``feature`` is a TenantSettings ``api_*`` flag.
+
+    Defaults match the MCP spec: writes are not idempotent; reads are.
+    ``openWorldHint`` is always true (tools hit a live Giswater DB).
+    """
 
     def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
         REGISTRY.append(
@@ -53,7 +66,8 @@ def tool(*, feature: str | None = None, read_only: bool = False, destructive: bo
                 {
                     "readOnlyHint": read_only,
                     "destructiveHint": destructive,
-                    "idempotentHint": idempotent,
+                    "idempotentHint": read_only if idempotent is None else idempotent,
+                    "openWorldHint": True,
                 },
             )
         )

@@ -12,6 +12,21 @@ from typing import Any
 from fastmcp.exceptions import ToolError
 
 _ID_KEYS = ("node_id", "arc_id", "connec_id", "gully_id", "link_id", "valve_id", "id")
+_DROP_EXACT = {"svg", "legend", "stylesheet"}
+_DROP_SUFFIXES = ("_style", "_stylesheet", "_visibility")
+
+
+def failed_text(resp: dict | None) -> str | None:
+    """Extract a human error string from a Giswater Failed envelope."""
+    if not isinstance(resp, dict):
+        return None
+    parts: list[Any] = [resp.get("MSGERR"), resp.get("NOSQLERR")]
+    msg = resp.get("message")
+    if isinstance(msg, dict):
+        parts.append(msg.get("text"))
+    elif isinstance(msg, str):
+        parts.append(msg)
+    return next((str(p) for p in parts if p), None)
 
 
 def unwrap(resp: dict) -> dict:
@@ -19,10 +34,7 @@ def unwrap(resp: dict) -> dict:
     if not isinstance(resp, dict):
         raise ToolError("Unexpected response from API")
     if resp.get("status") == "Failed":
-        parts = [resp.get("MSGERR"), resp.get("NOSQLERR"), resp.get("SQLSTATE")]
-        msg = (resp.get("message") or {}).get("text") if isinstance(resp.get("message"), dict) else None
-        text = next((p for p in (*parts, msg) if p), "API request failed")
-        raise ToolError(str(text))
+        raise ToolError(failed_text(resp) or "API request failed")
     body = resp.get("body") or {}
     data = body.get("data") if isinstance(body, dict) else None
     return data if isinstance(data, dict) else {}
@@ -34,12 +46,37 @@ def _truncate(items: list, limit: int) -> tuple[list, bool]:
     return items[:limit], True
 
 
-def feature_rows(resp: dict, limit: int) -> dict:
+def _drop_compact_key(key: str) -> bool:
+    lowered = key.lower()
+    if lowered in _DROP_EXACT:
+        return True
+    return lowered.endswith(_DROP_SUFFIXES)
+
+
+def compact_row(obj: Any, *, compact: bool = True) -> Any:
+    """Drop nulls and QGIS chrome (``*_style``, ``svg``, ``legend``, …)."""
+    if not compact:
+        return obj
+    if isinstance(obj, list):
+        return [compact_row(item, compact=True) for item in obj]
+    if not isinstance(obj, dict):
+        return obj
+    out: dict[str, Any] = {}
+    for key, value in obj.items():
+        if value is None or _drop_compact_key(str(key)):
+            continue
+        out[key] = compact_row(value, compact=True) if isinstance(value, (dict, list)) else value
+    return out
+
+
+def feature_rows(resp: dict, limit: int, *, compact: bool = True) -> dict:
     """Shape ``/features/*`` list payloads (``data.features``)."""
     data = unwrap(resp)
     items = list(data.get("features") or [])
     page = data.get("pageInfo") or {}
     sliced, truncated = _truncate(items, limit)
+    if compact:
+        sliced = [compact_row(item) for item in sliced]
     return {"items": sliced, "count": len(sliced), "truncated": truncated, "pageInfo": page or None}
 
 
@@ -51,22 +88,29 @@ def list_rows(resp: dict, limit: int) -> dict:
     return {"items": sliced, "count": len(sliced), "truncated": truncated}
 
 
-def one_row(resp: dict) -> dict:
+def one_row(resp: dict, *, compact: bool = True) -> dict:
     """Shape a single-feature payload (``data.feature``)."""
     data = unwrap(resp)
     feature = data.get("feature")
-    return feature if isinstance(feature, dict) else data
+    row = feature if isinstance(feature, dict) else data
+    return compact_row(row) if compact else row
 
 
-def fields_to_dict(fields: list | None) -> dict:
+def fields_to_dict(fields: list | None, *, skip_hidden: bool = False, drop_nulls: bool = False) -> dict:
     """Collapse a ``GwField`` list into ``{columnname: value}``."""
     out: dict[str, Any] = {}
     for field in fields or []:
         if not isinstance(field, dict):
             continue
+        if skip_hidden and field.get("hidden"):
+            continue
         name = field.get("columnname")
-        if name:
-            out[str(name)] = field.get("value")
+        if not name:
+            continue
+        value = field.get("value")
+        if drop_nulls and value is None:
+            continue
+        out[str(name)] = value
     return out
 
 

@@ -112,6 +112,7 @@ class SystemService:
                                 "schema": name,
                                 "project_type": row.get("project_type") or row.get("project"),
                                 "giswater": row.get("giswater"),
+                                "epsg": row.get("epsg"),
                             }
                         )
                 await conn.commit()

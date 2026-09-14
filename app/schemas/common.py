@@ -272,6 +272,7 @@ class SchemaInfo(BaseModel):
     schema_name: str = Field(..., alias="schema", description="Schema name")
     project_type: Optional[str] = Field(None, description="WS or UD (from sys_version)")
     giswater: Optional[str] = Field(None, description="Giswater version string")
+    epsg: Optional[int] = Field(None, description="Project EPSG code from sys_version")
 
 
 class SchemasResponse(BaseModel):

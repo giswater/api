@@ -5,18 +5,23 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp.exceptions import ToolError
+from pydantic import Field
 
 from app.mcp.client import TenantApi
-from app.mcp.registry import tool
+from app.mcp.registry import SchemaName, tool
 from app.mcp.shaping import list_rows, unwrap
-from app.schemas.epa.dscenario_models import DscenarioObjectType
+from app.schemas.epa.dscenario_models import DscenarioObjectType, DscenarioType
 
 
 @tool(feature="api_epa", read_only=True)
-async def list_dscenarios(api: TenantApi, schema: str, limit: int = 50) -> dict:
+async def list_dscenarios(
+    api: TenantApi,
+    schema: SchemaName,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 50,
+) -> dict:
     """List EPA dscenarios."""
     limit = min(max(limit, 1), 500)
     return list_rows(await api.get("/epa/dscenarios", schema=schema), limit=limit)
@@ -25,10 +30,10 @@ async def list_dscenarios(api: TenantApi, schema: str, limit: int = 50) -> dict:
 @tool(feature="api_epa", read_only=True)
 async def list_dscenario_objects(
     api: TenantApi,
-    schema: str,
-    dscenario_id: int,
-    object_type: DscenarioObjectType,
-    limit: int = 100,
+    schema: SchemaName,
+    dscenario_id: Annotated[int, Field(description="Dscenario id")],
+    object_type: Annotated[DscenarioObjectType, Field(description="Object class inside the dscenario")],
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 100,
 ) -> dict:
     """List objects of one type inside a dscenario (pipe, junction, demand, …)."""
     limit = min(max(limit, 1), 500)
@@ -39,16 +44,19 @@ async def list_dscenario_objects(
 @tool(feature="api_epa", destructive=True)
 async def manage_dscenario(
     api: TenantApi,
-    schema: str,
-    action: Literal["create", "select", "delete"],
-    dscenario_id: int | None = None,
-    name: str | None = None,
-    type: str | None = None,
-    descript: str | None = None,
-    expl: int = 0,
-    active: bool = True,
+    schema: SchemaName,
+    action: Annotated[Literal["create", "select", "delete"], Field(description="create / select / delete")],
+    dscenario_id: Annotated[int | None, Field(description="Required for select and delete")] = None,
+    name: Annotated[str | None, Field(description="Required for create")] = None,
+    type: Annotated[DscenarioType | None, Field(description="Required for create (DEMAND, VALVE, PIPE, …)")] = None,
+    descript: Annotated[str | None, Field(description="Optional description on create")] = None,
+    expl: Annotated[int, Field(description="Exploitation id on create")] = 0,
+    active: Annotated[bool, Field(description="Active flag on create")] = True,
 ) -> dict:
-    """Create, select or delete an EPA dscenario."""
+    """Create, select or delete an EPA dscenario.
+
+    create requires name and type. select and delete require dscenario_id.
+    """
     if action == "create":
         if not name or not type:
             raise ToolError("create requires name and type")
@@ -68,15 +76,20 @@ async def manage_dscenario(
 @tool(feature="api_epa", destructive=True)
 async def manage_dscenario_objects(
     api: TenantApi,
-    schema: str,
-    action: Literal["insert", "update", "delete", "upsert"],
-    dscenario_id: int,
-    object_type: DscenarioObjectType,
-    objects: list[dict[str, Any]] | None = None,
-    object_id: str | None = None,
-    data: dict[str, Any] | None = None,
+    schema: SchemaName,
+    action: Annotated[
+        Literal["insert", "update", "delete", "upsert"], Field(description="insert / update / upsert / delete")
+    ],
+    dscenario_id: Annotated[int, Field(description="Dscenario id")],
+    object_type: Annotated[DscenarioObjectType, Field(description="Object class inside the dscenario")],
+    objects: Annotated[list[dict[str, Any]] | None, Field(description="Required for insert and upsert")] = None,
+    object_id: Annotated[str | None, Field(description="Required for update and delete")] = None,
+    data: Annotated[dict[str, Any] | None, Field(description="Required for update (fields to patch)")] = None,
 ) -> dict:
-    """Insert, update, upsert or delete objects inside a dscenario."""
+    """Insert, update, upsert or delete objects inside a dscenario.
+
+    insert/upsert require objects. update requires object_id and data. delete requires object_id.
+    """
     base = f"/epa/dscenarios/{dscenario_id}/{object_type}"
     if action == "insert":
         if not objects:

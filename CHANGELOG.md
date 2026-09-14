@@ -10,14 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Curated MCP server** at `${API_ROOT}/v1/mcp/` (Streamable HTTP). One FastMCP instance per tenant, task-shaped tools over the REST API, gated by process `MCP_ENABLED` and per-tenant `API_MCP`.
-- **`GET ${API_ROOT}/v1/schemas`**: list Giswater project schemas (`sys_version`) with `project_type` and version.
+- **`GET ${API_ROOT}/v1/schemas`**: list Giswater project schemas (`sys_version`) with `project_type`, version, and optional `epsg`.
 - **`GET ${API_ROOT}/v1/crm/hydrometers`**: read hydrometers (`code` / `connecId` / `dmaId` / `limit`).
 - **`/features` endpoints**: typed filters for nodes/arcs/links/connecs/gullies (list + GeoJSON collection + by-id fields, form, and GeoJSON Feature), gated by `API_FEATURES`.
+- **MCP `get_feature_at_point`**: identify the feature at project-CRS coordinates via `GET /basic/getinfofromcoordinates`.
 
 ### Changed
 
 - **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.0** (refactored `gw_fct_getfeatures` with `featureType` / `outputFormat`). Compatibility table: **1.7.x → Giswater DB ≥ 4.17.0**.
 - **`gw_fct_getprofilevalues` extras key** `midNodes` → `midFeatures` (`app/services/om/profile_service.py`).
+- **Profile arc `omunit_id`** is optional (widen). Rows that omit it no longer 500.
 
 ### Deprecated
 

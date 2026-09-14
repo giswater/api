@@ -17,6 +17,7 @@ from starlette.types import ASGIApp
 from app.core.config import global_settings
 from app.core.constants import TENANT_PREFIX
 from app.mcp.registry import CURRENT_MCP_TOOL
+from app.mcp.shaping import failed_text
 from app.tenancy.registry import Tenant
 
 _FORWARD = ("authorization", "x-device", "x-lang")
@@ -76,8 +77,7 @@ class TenantApi:
             payload = resp.json()
         except Exception:
             payload = {"detail": resp.text}
-        detail = payload.get("detail", payload) if isinstance(payload, dict) else payload
-        text = str(detail)
+        text = _http_error_text(payload)
         if resp.status_code == 404 and "schema" in text.lower():
             names = await self._valid_schema_names()
             listed = ", ".join(names) if names else "(none found)"
@@ -93,8 +93,7 @@ class TenantApi:
         except Exception as exc:
             raise ToolError(f"Non-JSON response from {path}") from exc
         if isinstance(data, dict) and data.get("status") == "Failed":
-            parts = [data.get("MSGERR"), data.get("NOSQLERR"), (data.get("message") or {}).get("text")]
-            raise ToolError(next((p for p in parts if p), "API request failed"))
+            raise ToolError(failed_text(data) or "API request failed")
         return data if isinstance(data, dict) else {"result": data}
 
     async def get(self, path: str, *, schema: str | None, params: dict | None = None) -> dict:
@@ -111,3 +110,16 @@ class TenantApi:
 
     async def delete(self, path: str, *, schema: str | None, json: Any = None, params: dict | None = None) -> dict:
         return await self._send("DELETE", path, schema=schema, params=params, json=json)
+
+
+def _http_error_text(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return str(payload)
+    for candidate in (payload.get("detail"), payload):
+        if isinstance(candidate, dict):
+            text = failed_text(candidate)
+            if text:
+                return text
+        elif candidate is not None and candidate is not payload:
+            return str(candidate)
+    return str(payload.get("detail", payload))

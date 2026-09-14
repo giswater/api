@@ -84,12 +84,69 @@ def _call_tool(client: TestClient, name: str, arguments: dict, **kwargs):
     return resp, _parse_mcp(resp) if resp.status_code < 500 else None
 
 
+def _tool_data(body):
+    result = (body or {}).get("result") or {}
+    if result.get("structuredContent"):
+        return result["structuredContent"]
+    for item in result.get("content") or []:
+        text = item.get("text")
+        if text:
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"text": text, "isError": result.get("isError")}
+    return result
+
+
 def test_list_schemas_rest(client):
     resp = client.get(api("/schemas"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert "schemas" in body
     assert isinstance(body["schemas"], list)
+    for item in body["schemas"]:
+        assert "schema" in item
+        assert "project_type" in item or item.get("project_type") is None
+        assert "giswater" in item or item.get("giswater") is None
+        assert "epsg" in item
+
+
+def test_profile_arc_omunit_optional():
+    from app.schemas.om.profile_models import ArcModel
+
+    row = ArcModel(
+        arc_id=1,
+        descript="{}",
+        cat_geom1=0.15,
+        length=1.0,
+        z1=0,
+        z2=0,
+        y1=0,
+        y2=0,
+        elev1=1.0,
+        elev2=1.0,
+        node_1=1,
+        node_2=2,
+    )
+    assert row.omunit_id is None
+    assert (
+        ArcModel(
+            arc_id=1,
+            descript="{}",
+            cat_geom1=0.15,
+            length=1.0,
+            z1=0,
+            z2=0,
+            y1=0,
+            y2=0,
+            elev1=1.0,
+            elev2=1.0,
+            node_1=1,
+            node_2=2,
+            omunit_id=9,
+        ).omunit_id
+        == 9
+    )
 
 
 def test_mcp_tools_list_and_tenant_state(client):
@@ -140,11 +197,14 @@ def test_mcp_isolation_no_crm_leak(client):
 
 def test_mcp_list_schemas(client, default_params):
     assert_ready(client)
-    resp, body = _call_tool(client, "list_schemas", {"schema": default_params["schema"]})
+    resp, body = _call_tool(client, "list_schemas", {})
     assert resp.status_code == 200, resp.text
-    result = body.get("result") or body
-    text = json.dumps(result)
-    assert "schemas" in text or default_params["schema"] in text
+    data = _tool_data(body)
+    assert "schemas" in data or default_params["schema"] in json.dumps(body)
+    if isinstance(data, dict) and data.get("schemas"):
+        item = data["schemas"][0]
+        assert "schema" in item
+        assert "epsg" in item
 
 
 def test_mcp_bad_schema_lists_valid(client, default_params):
@@ -222,6 +282,192 @@ def test_mcp_find_features_gully(client, default_params):
         client,
         "find_features",
         {"schema": default_params["schema"], "feature_type": "gully", "limit": 5},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") in (None, False)
+
+
+_EXPECTED_TOOLS = {
+    "list_schemas",
+    "list_hydrometers",
+    "manage_hydrometers",
+    "list_dscenarios",
+    "list_dscenario_objects",
+    "manage_dscenario",
+    "manage_dscenario_objects",
+    "find_features",
+    "get_feature",
+    "search_features",
+    "get_feature_at_point",
+    "list_mapzones",
+    "get_dma_contents",
+    "get_water_balance",
+    "list_mincuts",
+    "get_mincut",
+    "list_mincut_valves",
+    "create_mincut",
+    "update_mincut",
+    "set_mincut_valve",
+    "set_mincut_state",
+    "delete_mincut",
+    "trace_flow",
+    "get_profile",
+}
+
+_READ_ONLY = {
+    "list_schemas",
+    "list_hydrometers",
+    "list_dscenarios",
+    "list_dscenario_objects",
+    "find_features",
+    "get_feature",
+    "search_features",
+    "get_feature_at_point",
+    "list_mapzones",
+    "get_dma_contents",
+    "get_water_balance",
+    "list_mincuts",
+    "get_mincut",
+    "list_mincut_valves",
+    "trace_flow",
+    "get_profile",
+}
+
+_DESTRUCTIVE = {
+    "manage_hydrometers",
+    "manage_dscenario",
+    "manage_dscenario_objects",
+    "set_mincut_state",
+    "delete_mincut",
+}
+
+
+def test_mcp_tool_inventory_and_annotations(client):
+    names = _tool_names(client)
+    assert _EXPECTED_TOOLS <= names
+    from app.mcp.registry import REGISTRY
+
+    by_name = {spec.fn.__name__: spec.annotations for spec in REGISTRY}
+    assert set(by_name) >= _EXPECTED_TOOLS
+    for name in _READ_ONLY:
+        assert by_name[name]["readOnlyHint"] is True
+        assert by_name[name]["idempotentHint"] is True
+        assert by_name[name]["openWorldHint"] is True
+    for name, annotations in by_name.items():
+        if name not in _READ_ONLY:
+            assert annotations["idempotentHint"] is False, name
+            assert annotations["readOnlyHint"] is False, name
+        if name in _DESTRUCTIVE:
+            assert annotations["destructiveHint"] is True, name
+        else:
+            assert annotations["destructiveHint"] is False, name
+
+
+def test_mcp_find_features_compact(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "limit": 3},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") in (None, False)
+    data = _tool_data(body)
+    items = data.get("items") or []
+    if not items:
+        pytest.skip("no nodes")
+    row = items[0]
+    assert not any(key.endswith("_style") or key.endswith("_visibility") for key in row)
+    full_resp, full_body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "limit": 1, "compact": False},
+    )
+    assert full_resp.status_code == 200, full_resp.text
+    full_items = _tool_data(full_body).get("items") or []
+    if full_items:
+        assert len(full_items[0]) >= len(row)
+        assert set(row).issubset(full_items[0])
+
+
+def test_mcp_partial_bbox_errors(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "x1": 1.0},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    assert "x1" in json.dumps(body) or "Bbox" in json.dumps(body)
+
+
+def test_mcp_get_profile(client, default_params):
+    assert_ready(client)
+    listed, listed_body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "limit": 2},
+    )
+    if listed.status_code != 200:
+        pytest.skip(listed.text)
+    items = _tool_data(listed_body).get("items") or []
+    ids = [item.get("node_id") for item in items if item.get("node_id") is not None]
+    if len(ids) < 2:
+        pytest.skip("need two nodes for profile")
+    resp, body = _call_tool(
+        client,
+        "get_profile",
+        {
+            "schema": default_params["schema"],
+            "start_node_id": int(ids[0]),
+            "end_node_id": int(ids[1]),
+        },
+    )
+    payload = json.dumps(body)
+    assert "omunit_id" not in payload.lower() or "field required" not in payload.lower()
+    if resp.status_code != 200:
+        pytest.skip(resp.text)
+    result = (body or {}).get("result") or {}
+    if result.get("isError"):
+        pytest.skip(payload)
+
+
+@pytest.mark.ws
+def test_mcp_get_feature_at_point_ws(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "get_feature_at_point",
+        {
+            "schema": default_params["schema"],
+            "x": 419487.25,
+            "y": 4576484.26,
+            "epsg": 25831,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") in (None, False)
+    data = _tool_data(body)
+    assert "fields" in data or "feature_id" in data
+
+
+@pytest.mark.ud
+def test_mcp_get_feature_at_point_ud(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "get_feature_at_point",
+        {
+            "schema": default_params["schema"],
+            "x": 419433.85,
+            "y": 4576570.45,
+            "epsg": 25831,
+        },
     )
     assert resp.status_code == 200, resp.text
     result = body.get("result") or {}

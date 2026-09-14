@@ -10,12 +10,12 @@ from app.mcp.registry import tool
 
 
 @tool(read_only=True)
-async def list_schemas(api: TenantApi, schema: str) -> dict:
+async def list_schemas(api: TenantApi) -> dict:
     """List Giswater project schemas on this tenant.
 
-    Call this first. Each schema is one project: water supply (WS) or urban
-    drainage (UD). Pick the schema that matches the user's intent; if it is
-    ambiguous, ask the user. Never guess. The ``schema`` argument is unused
-    here but required on every other tool.
+    Call this first (no arguments). Each schema is one project: water supply (WS)
+    or urban drainage (UD), with its ``epsg``. Pick the schema that matches the
+    user's intent; if it is ambiguous, ask the user. Never guess. Pass the chosen
+    schema name to every other tool.
     """
-    return await api.get("/schemas", schema=schema)
+    return await api.get("/schemas", schema=None)

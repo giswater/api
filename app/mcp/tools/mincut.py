@@ -8,10 +8,12 @@ or (at your option) any later version.
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+
+from pydantic import Field
 
 from app.mcp.client import TenantApi
-from app.mcp.registry import tool
+from app.mcp.registry import SchemaName, tool
 from app.mcp.shaping import fc_summary, list_rows, unwrap
 
 MincutState = Literal[0, 1, 2, 3, 4, 5]
@@ -66,10 +68,13 @@ def _summarise_mincut(data: dict, include_geometry: bool) -> dict:
 @tool(feature="api_mincut", read_only=True)
 async def list_mincuts(
     api: TenantApi,
-    schema: str,
-    state: MincutState | None = None,
-    exploitation: int | None = None,
-    limit: int = 50,
+    schema: SchemaName,
+    state: Annotated[
+        MincutState | None,
+        Field(description="0 planified, 1 in progress, 2 finished, 3 canceled, 4 on planning, 5 conflict"),
+    ] = None,
+    exploitation: Annotated[int | None, Field(description="Exploitation id")] = None,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 50,
 ) -> dict:
     """List mincuts, most recent first. State: 0 planified, 1 in progress, 2 finished, 3 canceled, 4 on planning, 5 conflict."""
     limit = min(max(limit, 1), 500)
@@ -82,30 +87,40 @@ async def list_mincuts(
 
 
 @tool(feature="api_mincut", read_only=True)
-async def get_mincut(api: TenantApi, schema: str, mincut_id: int, include_geometry: bool = False) -> dict:
+async def get_mincut(
+    api: TenantApi,
+    schema: SchemaName,
+    mincut_id: Annotated[int, Field(description="Mincut id")],
+    include_geometry: Annotated[bool, Field(description="Include GeoJSON FeatureCollections")] = False,
+) -> dict:
     """Mincut summary: state, bbox, and counts/ids per valve category and affected features."""
     raw = await api.get(f"/om/mincuts/{mincut_id}", schema=schema)
     return _summarise_mincut(unwrap(raw), include_geometry)
 
 
 @tool(feature="api_mincut", read_only=True)
-async def list_mincut_valves(api: TenantApi, schema: str, mincut_id: int, limit: int = 50) -> dict:
+async def list_mincut_valves(
+    api: TenantApi,
+    schema: SchemaName,
+    mincut_id: Annotated[int, Field(description="Mincut id")],
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 50,
+) -> dict:
     """Valves associated with a mincut."""
     limit = min(max(limit, 1), 500)
     raw = await api.get(f"/om/mincuts/{mincut_id}/valves", schema=schema)
     return list_rows(raw, limit=limit)
 
 
-@tool(feature="api_mincut", idempotent=False)
+@tool(feature="api_mincut")
 async def create_mincut(
     api: TenantApi,
-    schema: str,
-    x: float,
-    y: float,
-    epsg: int,
-    mincut_type: Literal["Demo", "Test", "Real"] = "Demo",
-    anl_cause: Literal["Accidental", "Planified"] = "Accidental",
-    anl_descript: str | None = None,
+    schema: SchemaName,
+    x: Annotated[float, Field(description="X coordinate in the project CRS (not WGS84)")],
+    y: Annotated[float, Field(description="Y coordinate in the project CRS (not WGS84)")],
+    epsg: Annotated[int, Field(description="Project EPSG from list_schemas (not 4326)")],
+    mincut_type: Annotated[Literal["Demo", "Test", "Real"], Field(description="Mincut type")] = "Demo",
+    anl_cause: Annotated[Literal["Accidental", "Planified"], Field(description="Cause")] = "Accidental",
+    anl_descript: Annotated[str | None, Field(description="Optional description")] = None,
 ) -> dict:
     """Create an unplanned mincut at project-CRS coordinates (not WGS84). Not idempotent — retrying creates a duplicate."""
     body = {
@@ -124,11 +139,11 @@ async def create_mincut(
 @tool(feature="api_mincut")
 async def update_mincut(
     api: TenantApi,
-    schema: str,
-    mincut_id: int,
-    mincut_type: Literal["Demo", "Test", "Real"] | None = None,
-    anl_descript: str | None = None,
-    exec_descript: str | None = None,
+    schema: SchemaName,
+    mincut_id: Annotated[int, Field(description="Mincut id")],
+    mincut_type: Annotated[Literal["Demo", "Test", "Real"] | None, Field(description="Mincut type")] = None,
+    anl_descript: Annotated[str | None, Field(description="Plan description")] = None,
+    exec_descript: Annotated[str | None, Field(description="Execution description")] = None,
 ) -> dict:
     """Update plan or execution fields of an existing mincut."""
     body: dict[str, Any] = {"use_psectors": False}
@@ -142,13 +157,13 @@ async def update_mincut(
     return unwrap(raw)
 
 
-@tool(feature="api_mincut", idempotent=False)
+@tool(feature="api_mincut")
 async def set_mincut_valve(
     api: TenantApi,
-    schema: str,
-    mincut_id: int,
-    valve_id: int,
-    change: Literal["status", "unaccess"],
+    schema: SchemaName,
+    mincut_id: Annotated[int, Field(description="Mincut id")],
+    valve_id: Annotated[int, Field(description="Valve node id")],
+    change: Annotated[Literal["status", "unaccess"], Field(description="Toggle status or unaccess")],
 ) -> dict:
     """Toggle a mincut valve. This is a TOGGLE, not a setter: calling twice restores the original state. Do not retry after a timeout."""
     path = f"/om/mincuts/{mincut_id}/valves/{valve_id}/toggle-{change}"
@@ -159,10 +174,10 @@ async def set_mincut_valve(
 @tool(feature="api_mincut", destructive=True)
 async def set_mincut_state(
     api: TenantApi,
-    schema: str,
-    mincut_id: int,
-    action: Literal["start", "end", "cancel"],
-    shutoff_required: bool = True,
+    schema: SchemaName,
+    mincut_id: Annotated[int, Field(description="Mincut id")],
+    action: Annotated[Literal["start", "end", "cancel"], Field(description="Lifecycle action")],
+    shutoff_required: Annotated[bool, Field(description="Required when action is end")] = True,
 ) -> dict:
     """Change mincut lifecycle. Starting a mincut interrupts water supply to customers."""
     path = f"/om/mincuts/{mincut_id}/{action}"
@@ -174,6 +189,10 @@ async def set_mincut_state(
 
 
 @tool(feature="api_mincut", destructive=True)
-async def delete_mincut(api: TenantApi, schema: str, mincut_id: int) -> dict:
+async def delete_mincut(
+    api: TenantApi,
+    schema: SchemaName,
+    mincut_id: Annotated[int, Field(description="Mincut id")],
+) -> dict:
     """Permanently delete a mincut record."""
     return unwrap(await api.delete(f"/om/mincuts/{mincut_id}", schema=schema))
