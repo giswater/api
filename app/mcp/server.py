@@ -22,11 +22,10 @@ _INSTRUCTIONS = (
 )
 
 
-def build_tenant_mcp(tenant: Tenant, root_app: ASGIApp) -> FastMCP:
+def build_tenant_mcp(tenant: Tenant, root_app: ASGIApp) -> tuple[FastMCP, TenantApi]:
     api = TenantApi(tenant, root_app)
     mcp = FastMCP(name=f"Giswater API ({tenant.id})", instructions=_INSTRUCTIONS)
     for spec in REGISTRY:
-        if spec.feature is None or getattr(tenant.settings, spec.feature, False):
+        if spec.feature is None or getattr(tenant.settings, spec.feature):
             mcp.tool(spec.bind(api), name=spec.fn.__name__, annotations=spec.annotations)
-    mcp._gw_api = api  # closed by TenantMcp.aclose
-    return mcp
+    return mcp, api

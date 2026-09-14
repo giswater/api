@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 
 from app.mcp.client import TenantApi
-from app.mcp.registry import SchemaName, tool
+from app.mcp.registry import DEFAULT_LIMIT, DENSE_LIMIT, SchemaName, clamp_limit, tool
 from app.mcp.shaping import compact_row, feature_rows, unwrap
 
 ZoneType = Literal[
@@ -39,6 +39,19 @@ _ZONE_PATH: dict[ZoneType, str] = {
     "omunit": "/om/omunits",
 }
 
+_ZONE_LIST_KEY: dict[ZoneType, str] = {
+    "dma": "dmas",
+    "macrodma": "macrodmas",
+    "sector": "sectors",
+    "macrosector": "macrosectors",
+    "presszone": "presszones",
+    "dqa": "dqas",
+    "macrodqa": "macrodqas",
+    "omzone": "omzones",
+    "macroomzone": "macroomzones",
+    "omunit": "omunits",
+}
+
 _CONNEC_KEEP = {
     "connec_id",
     "code",
@@ -51,13 +64,6 @@ _CONNEC_KEEP = {
     "expl_id",
     "cat_dnom",
 }
-
-
-def _first_list(data: dict) -> list:
-    for value in data.values():
-        if isinstance(value, list):
-            return value
-    return []
 
 
 def _drop_geometry(items: list[Any]) -> list[Any]:
@@ -75,13 +81,13 @@ async def list_mapzones(
     api: TenantApi,
     schema: SchemaName,
     zone_type: Annotated[ZoneType, Field(description="Mapzone class (dma, sector, presszone, dqa, omzone, …)")],
-    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 50,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
     """List mapzones of one type (dma, sector, presszone, dqa, omzone, …). Geometry is omitted."""
-    limit = min(max(limit, 1), 500)
+    limit = clamp_limit(limit)
     raw = await api.get(_ZONE_PATH[zone_type], schema=schema)
     data = unwrap(raw)
-    items = _drop_geometry(_first_list(data))
+    items = _drop_geometry(list(data.get(_ZONE_LIST_KEY[zone_type]) or []))
     truncated = len(items) > limit
     items = items[:limit]
     return {"zone_type": zone_type, "items": items, "count": len(items), "truncated": truncated}
@@ -93,10 +99,10 @@ async def get_dma_contents(
     schema: SchemaName,
     dma_id: Annotated[int, Field(description="DMA id")],
     content: Annotated[Literal["hydrometers", "connecs"], Field(description="hydrometers or connecs")],
-    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 100,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DENSE_LIMIT,
 ) -> dict:
     """DMA contents: hydrometers or connecs (curated columns)."""
-    limit = min(max(limit, 1), 500)
+    limit = clamp_limit(limit)
     if content == "connecs":
         raw = await api.get("/features/connecs", schema=schema, params={"dma_id": dma_id, "limit": limit})
         shaped = feature_rows(raw, limit=limit)
@@ -115,7 +121,7 @@ async def get_dma_contents(
         }
     raw = await api.get(f"/om/dmas/{dma_id}/hydrometers", schema=schema)
     data = unwrap(raw)
-    items = _first_list(data)
+    items = list(data.get("hydrometers") or [])
     truncated = len(items) > limit
     items = items[:limit]
     return {"dma_id": dma_id, "content": content, "items": items, "count": len(items), "truncated": truncated}

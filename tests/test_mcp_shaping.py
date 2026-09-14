@@ -46,6 +46,21 @@ def test_feature_rows_truncates():
     assert shaped["items"][0]["id"] == 0
 
 
+def test_feature_rows_truncated_from_pageinfo():
+    resp = {
+        "status": "Accepted",
+        "body": {
+            "data": {
+                "features": [{"id": 1}, {"id": 2}],
+                "pageInfo": {"currentPage": 1, "lastPage": 3},
+            }
+        },
+    }
+    shaped = feature_rows(resp, limit=2)
+    assert shaped["count"] == 2
+    assert shaped["truncated"] is True
+
+
 def test_list_rows():
     resp = {"status": "Accepted", "body": {"data": {"fields": [{"a": 1}, {"a": 2}]}}}
     shaped = list_rows(resp, limit=10)
@@ -113,6 +128,23 @@ def test_compact_row_drops_nulls_and_styles():
         }
     )
     assert row == {"node_id": 1, "sys_type": "VALVE", "coordinates": {"x": 1.0, "y": 2.0, "epsg": 25831}}
+
+
+def test_compact_row_nested_stylesheet():
+    geom = compact_row(
+        {
+            "type": "FeatureCollection",
+            "legend": "x",
+            "features": [
+                {
+                    "properties": {"node_id": 1, "stylesheet": {}, "dma_style": "x"},
+                    "geometry": {"type": "Point", "coordinates": [1, 2]},
+                }
+            ],
+        }
+    )
+    assert "legend" not in geom
+    assert geom["features"][0]["properties"] == {"node_id": 1}
 
 
 def test_fields_to_dict_skip_hidden_drop_nulls():

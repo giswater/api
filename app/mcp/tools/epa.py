@@ -11,7 +11,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from app.mcp.client import TenantApi
-from app.mcp.registry import SchemaName, tool
+from app.mcp.registry import DEFAULT_LIMIT, DENSE_LIMIT, SchemaName, clamp_limit, tool
 from app.mcp.shaping import list_rows, unwrap
 from app.schemas.epa.dscenario_models import DscenarioObjectType, DscenarioType
 
@@ -20,11 +20,10 @@ from app.schemas.epa.dscenario_models import DscenarioObjectType, DscenarioType
 async def list_dscenarios(
     api: TenantApi,
     schema: SchemaName,
-    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 50,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
     """List EPA dscenarios."""
-    limit = min(max(limit, 1), 500)
-    return list_rows(await api.get("/epa/dscenarios", schema=schema), limit=limit)
+    return list_rows(await api.get("/epa/dscenarios", schema=schema), limit=clamp_limit(limit))
 
 
 @tool(feature="api_epa", read_only=True)
@@ -33,12 +32,11 @@ async def list_dscenario_objects(
     schema: SchemaName,
     dscenario_id: Annotated[int, Field(description="Dscenario id")],
     object_type: Annotated[DscenarioObjectType, Field(description="Object class inside the dscenario")],
-    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 100,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DENSE_LIMIT,
 ) -> dict:
     """List objects of one type inside a dscenario (pipe, junction, demand, …)."""
-    limit = min(max(limit, 1), 500)
     raw = await api.get(f"/epa/dscenarios/{dscenario_id}/{object_type}", schema=schema)
-    return list_rows(raw, limit=limit)
+    return list_rows(raw, limit=clamp_limit(limit))
 
 
 @tool(feature="api_epa", destructive=True)
@@ -48,23 +46,27 @@ async def manage_dscenario(
     action: Annotated[Literal["create", "select", "delete"], Field(description="create / select / delete")],
     dscenario_id: Annotated[int | None, Field(description="Required for select and delete")] = None,
     name: Annotated[str | None, Field(description="Required for create")] = None,
-    type: Annotated[DscenarioType | None, Field(description="Required for create (DEMAND, VALVE, PIPE, …)")] = None,
+    dscenario_type: Annotated[
+        DscenarioType | None, Field(description="Required for create (DEMAND, VALVE, PIPE, …)")
+    ] = None,
     descript: Annotated[str | None, Field(description="Optional description on create")] = None,
     expl: Annotated[int, Field(description="Exploitation id on create")] = 0,
     active: Annotated[bool, Field(description="Active flag on create")] = True,
 ) -> dict:
     """Create, select or delete an EPA dscenario.
 
-    create requires name and type. select and delete require dscenario_id.
+    create requires name and dscenario_type. select and delete require dscenario_id.
+    select sets the current user's selected dscenario (session selector, not a DB update of the row).
     """
     if action == "create":
-        if not name or not type:
-            raise ToolError("create requires name and type")
+        if not name or not dscenario_type:
+            raise ToolError("create requires name and dscenario_type")
         raw = await api.post(
             "/epa/dscenarios",
             schema=schema,
-            json={"name": name, "type": type, "descript": descript, "expl": expl, "active": active},
+            json={"name": name, "type": dscenario_type, "descript": descript, "expl": expl, "active": active},
         )
+        # POST /epa/dscenarios is response_model=dict and may skip the Giswater envelope.
         return unwrap(raw) if isinstance(raw.get("body"), dict) else raw
     if dscenario_id is None:
         raise ToolError("select/delete require dscenario_id")

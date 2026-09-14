@@ -12,7 +12,7 @@ from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import SchemaName, tool
-from app.mcp.shaping import drop_keys, fc_summary, unwrap
+from app.mcp.shaping import compact_row, fc_summary, unwrap
 
 
 @tool(feature="api_flow", read_only=True)
@@ -24,6 +24,15 @@ async def trace_flow(
     x: Annotated[float | None, Field(description="X in project CRS if node_id is omitted")] = None,
     y: Annotated[float | None, Field(description="Y in project CRS if node_id is omitted")] = None,
     epsg: Annotated[int | None, Field(description="Project EPSG if using x/y (not 4326)")] = None,
+    zoom_ratio: Annotated[
+        float,
+        Field(
+            description=(
+                "Current map zoom/scale the user is viewing; sets click tolerance for snapping to a feature. "
+                "Pass the web map client's zoom if available."
+            )
+        ),
+    ] = 1000,
     include_geometry: Annotated[bool, Field(description="Include GeoJSON point/line collections")] = False,
 ) -> dict:
     """Trace flow upstream or downstream from a node id or project-CRS coordinates.
@@ -35,7 +44,7 @@ async def trace_flow(
     if node_id is not None:
         body["node_id"] = node_id
     elif None not in (x, y, epsg):
-        body["coordinates"] = {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": 1000}
+        body["coordinates"] = {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio}
     else:
         raise ToolError("Provide node_id, or x + y + epsg (project CRS, not lat/lon)")
     raw = await api.post("/om/flow", schema=schema, json=body)
@@ -82,7 +91,7 @@ async def get_profile(
         "initpoint": data.get("initpoint"),
     }
     if include_geometry:
-        result["point"] = data.get("point")
-        result["line"] = data.get("line")
-        result["polygon"] = data.get("polygon")
-    return drop_keys(result, "stylesheet", "legend", "returnManager")
+        result["point"] = compact_row(data.get("point"))
+        result["line"] = compact_row(data.get("line"))
+        result["polygon"] = compact_row(data.get("polygon"))
+    return result

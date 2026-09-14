@@ -10,19 +10,31 @@ from __future__ import annotations
 import functools
 import inspect
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Annotated, Any, Callable
 
 from pydantic import Field
+
+from app.core.config import TenantSettings
 
 CURRENT_MCP_TOOL: ContextVar[str | None] = ContextVar("current_mcp_tool", default=None)
 
 REGISTRY: list[ToolSpec] = []
 
+DEFAULT_LIMIT = 50
+DENSE_LIMIT = 100
+MAX_LIMIT = 500
+
+_TENANT_SETTING_FIELDS = {f.name for f in fields(TenantSettings)}
+
 SchemaName = Annotated[
     str,
     Field(description="Giswater project schema. Call list_schemas first; never guess."),
 ]
+
+
+def clamp_limit(limit: int) -> int:
+    return min(max(limit, 1), MAX_LIMIT)
 
 
 @dataclass(frozen=True)
@@ -46,6 +58,9 @@ class ToolSpec:
                 CURRENT_MCP_TOOL.reset(token)
 
         bound.__signature__ = new_sig  # type: ignore[attr-defined]
+        anns = dict(getattr(bound, "__annotations__", {}))
+        anns.pop("api", None)
+        bound.__annotations__ = anns
         return bound
 
 
@@ -59,6 +74,8 @@ def tool(
     """
 
     def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
+        if feature is not None and feature not in _TENANT_SETTING_FIELDS:
+            raise ValueError(f"Unknown tenant feature flag {feature!r} on {fn.__name__}")
         REGISTRY.append(
             ToolSpec(
                 fn,

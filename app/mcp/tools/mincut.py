@@ -13,7 +13,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 
 from app.mcp.client import TenantApi
-from app.mcp.registry import SchemaName, tool
+from app.mcp.registry import DEFAULT_LIMIT, SchemaName, clamp_limit, tool
 from app.mcp.shaping import fc_summary, list_rows, unwrap
 
 MincutState = Literal[0, 1, 2, 3, 4, 5]
@@ -74,10 +74,10 @@ async def list_mincuts(
         Field(description="0 planified, 1 in progress, 2 finished, 3 canceled, 4 on planning, 5 conflict"),
     ] = None,
     exploitation: Annotated[int | None, Field(description="Exploitation id")] = None,
-    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 50,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
-    """List mincuts, most recent first. State: 0 planified, 1 in progress, 2 finished, 3 canceled, 4 on planning, 5 conflict."""
-    limit = min(max(limit, 1), 500)
+    """List mincuts. State: 0 planified, 1 in progress, 2 finished, 3 canceled, 4 on planning, 5 conflict."""
+    limit = clamp_limit(limit)
     raw = await api.get(
         "/om/mincuts",
         schema=schema,
@@ -103,10 +103,10 @@ async def list_mincut_valves(
     api: TenantApi,
     schema: SchemaName,
     mincut_id: Annotated[int, Field(description="Mincut id")],
-    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = 50,
+    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
     """Valves associated with a mincut."""
-    limit = min(max(limit, 1), 500)
+    limit = clamp_limit(limit)
     raw = await api.get(f"/om/mincuts/{mincut_id}/valves", schema=schema)
     return list_rows(raw, limit=limit)
 
@@ -121,10 +121,19 @@ async def create_mincut(
     mincut_type: Annotated[Literal["Demo", "Test", "Real"], Field(description="Mincut type")] = "Demo",
     anl_cause: Annotated[Literal["Accidental", "Planified"], Field(description="Cause")] = "Accidental",
     anl_descript: Annotated[str | None, Field(description="Optional description")] = None,
+    zoom_ratio: Annotated[
+        float,
+        Field(
+            description=(
+                "Current map zoom/scale the user is viewing; sets click tolerance for snapping to a feature. "
+                "Pass the web map client's zoom if available."
+            )
+        ),
+    ] = 1000,
 ) -> dict:
     """Create an unplanned mincut at project-CRS coordinates (not WGS84). Not idempotent — retrying creates a duplicate."""
     body = {
-        "coordinates": {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": 1000},
+        "coordinates": {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio},
         "plan": {
             "mincut_type": mincut_type,
             "anl_cause": anl_cause,
@@ -158,7 +167,7 @@ async def update_mincut(
 
 
 @tool(feature="api_mincut")
-async def set_mincut_valve(
+async def toggle_mincut_valve(
     api: TenantApi,
     schema: SchemaName,
     mincut_id: Annotated[int, Field(description="Mincut id")],

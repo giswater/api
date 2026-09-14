@@ -41,7 +41,7 @@ def unwrap(resp: dict) -> dict:
 
 
 def _truncate(items: list, limit: int) -> tuple[list, bool]:
-    if limit is None or limit < 0 or len(items) <= limit:
+    if len(items) <= limit:
         return items, False
     return items[:limit], True
 
@@ -53,19 +53,17 @@ def _drop_compact_key(key: str) -> bool:
     return lowered.endswith(_DROP_SUFFIXES)
 
 
-def compact_row(obj: Any, *, compact: bool = True) -> Any:
+def compact_row(obj: Any) -> Any:
     """Drop nulls and QGIS chrome (``*_style``, ``svg``, ``legend``, …)."""
-    if not compact:
-        return obj
     if isinstance(obj, list):
-        return [compact_row(item, compact=True) for item in obj]
+        return [compact_row(item) for item in obj]
     if not isinstance(obj, dict):
         return obj
     out: dict[str, Any] = {}
     for key, value in obj.items():
         if value is None or _drop_compact_key(str(key)):
             continue
-        out[key] = compact_row(value, compact=True) if isinstance(value, (dict, list)) else value
+        out[key] = compact_row(value) if isinstance(value, (dict, list)) else value
     return out
 
 
@@ -77,6 +75,10 @@ def feature_rows(resp: dict, limit: int, *, compact: bool = True) -> dict:
     sliced, truncated = _truncate(items, limit)
     if compact:
         sliced = [compact_row(item) for item in sliced]
+    current = page.get("currentPage")
+    last = page.get("lastPage")
+    if isinstance(current, int) and isinstance(last, int) and last > current:
+        truncated = True
     return {"items": sliced, "count": len(sliced), "truncated": truncated, "pageInfo": page or None}
 
 

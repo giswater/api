@@ -54,6 +54,9 @@ class TenantMcp:
                 raise exc
 
     async def _run(self, ready: asyncio.Event) -> None:
+        # FastMCP's session manager uses an anyio task group that must be entered
+        # and exited in the same task. Do not fold this into an AsyncExitStack on
+        # the caller — the lifespan context has to live on this dedicated task.
         lifespan = getattr(self.app, "router", None)
         ctx = getattr(lifespan, "lifespan_context", None) if lifespan is not None else None
         if ctx is None:
@@ -93,9 +96,9 @@ async def get_or_create(tenant: Tenant | None) -> TenantMcp | None:
     async with tenant.mcp_lock:
         if tenant.mcp is not None:
             return tenant.mcp
-        mcp = build_tenant_mcp(tenant, _root_app)
+        mcp, api = build_tenant_mcp(tenant, _root_app)
         http_app = mcp.http_app(path="/", stateless_http=True)
-        entry = TenantMcp(http_app, api=getattr(mcp, "_gw_api", None))
+        entry = TenantMcp(http_app, api=api)
         try:
             await entry.start()
         except Exception:
@@ -126,28 +129,32 @@ async def _authenticate(scope: Scope) -> JSONResponse | None:
     return None
 
 
-async def mcp_dispatch(scope: Scope, receive: Receive, send: Send) -> None:
-    if scope["type"] != "http":
-        return
+async def _resolve_mcp(scope: Scope) -> TenantMcp | JSONResponse:
     tenant = (scope.get("state") or {}).get("tenant")
     entry = await get_or_create(tenant) if tenant else None
     if entry is None:
-        await JSONResponse({"detail": "Not found"}, status_code=404)(scope, receive, send)
-        return
+        return JSONResponse({"detail": "Not found"}, status_code=404)
     denied = await _authenticate(scope)
     if denied is not None:
-        await denied(scope, receive, send)
+        return denied
+    return entry
+
+
+async def mcp_dispatch(scope: Scope, receive: Receive, send: Send) -> None:
+    if scope["type"] != "http":
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1000})
         return
-    await entry.app({**scope, "path": "/", "raw_path": b"/"}, receive, send)
+    resolved = await _resolve_mcp(scope)
+    if isinstance(resolved, JSONResponse):
+        await resolved(scope, receive, send)
+        return
+    await resolved.app({**scope, "path": "/", "raw_path": b"/"}, receive, send)
 
 
 async def mcp_http_endpoint(request: Request):
     """FastAPI route handler for ``/mcp`` without a trailing slash."""
-    tenant = getattr(request.state, "tenant", None)
-    entry = await get_or_create(tenant) if tenant else None
-    if entry is None:
-        return JSONResponse({"detail": "Not found"}, status_code=404)
-    denied = await _authenticate(request.scope)
-    if denied is not None:
-        return denied
-    return _ASGIPassthrough(entry.app)
+    resolved = await _resolve_mcp(request.scope)
+    if isinstance(resolved, JSONResponse):
+        return resolved
+    return _ASGIPassthrough(resolved.app)

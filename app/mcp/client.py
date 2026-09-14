@@ -115,11 +115,9 @@ class TenantApi:
 def _http_error_text(payload: Any) -> str:
     if not isinstance(payload, dict):
         return str(payload)
-    for candidate in (payload.get("detail"), payload):
-        if isinstance(candidate, dict):
-            text = failed_text(candidate)
-            if text:
-                return text
-        elif candidate is not None and candidate is not payload:
-            return str(candidate)
-    return str(payload.get("detail", payload))
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        return failed_text(detail) or str(detail)
+    if detail is not None:
+        return str(detail)
+    return failed_text(payload) or str(payload)

@@ -5,6 +5,7 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
+import inspect
 import json
 
 import pytest
@@ -308,7 +309,7 @@ _EXPECTED_TOOLS = {
     "list_mincut_valves",
     "create_mincut",
     "update_mincut",
-    "set_mincut_valve",
+    "toggle_mincut_valve",
     "set_mincut_state",
     "delete_mincut",
     "trace_flow",
@@ -345,11 +346,11 @@ _DESTRUCTIVE = {
 
 def test_mcp_tool_inventory_and_annotations(client):
     names = _tool_names(client)
-    assert _EXPECTED_TOOLS <= names
+    assert names == _EXPECTED_TOOLS
     from app.mcp.registry import REGISTRY
 
     by_name = {spec.fn.__name__: spec.annotations for spec in REGISTRY}
-    assert set(by_name) >= _EXPECTED_TOOLS
+    assert set(by_name) == _EXPECTED_TOOLS
     for name in _READ_ONLY:
         assert by_name[name]["readOnlyHint"] is True
         assert by_name[name]["idempotentHint"] is True
@@ -362,6 +363,17 @@ def test_mcp_tool_inventory_and_annotations(client):
             assert annotations["destructiveHint"] is True, name
         else:
             assert annotations["destructiveHint"] is False, name
+
+
+def test_mcp_bind_hides_api_from_schema():
+    from app.mcp.registry import REGISTRY
+
+    spec = next(s for s in REGISTRY if s.fn.__name__ == "find_features")
+    bound = spec.bind(object())
+    assert "api" not in bound.__annotations__
+    assert "api" not in inspect.signature(bound).parameters
+    assert "schema" in inspect.signature(bound).parameters
+    assert "feature_type" in inspect.signature(bound).parameters
 
 
 def test_mcp_find_features_compact(client, default_params):
@@ -403,6 +415,19 @@ def test_mcp_partial_bbox_errors(client, default_params):
     result = body.get("result") or {}
     assert result.get("isError") is True
     assert "x1" in json.dumps(body) or "Bbox" in json.dumps(body)
+
+
+def test_mcp_find_features_rejects_cross_type_filters(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "arc_type": ["PIPE"]},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    assert "arc_type" in json.dumps(body)
 
 
 def test_mcp_get_profile(client, default_params):
