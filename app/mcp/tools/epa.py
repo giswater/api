@@ -91,6 +91,10 @@ async def manage_dscenario_objects(
     """Insert, update, upsert or delete objects inside a dscenario.
 
     insert/upsert require objects. update requires object_id and data. delete requires object_id.
+    The id column (and object_id) depends on object_type: connec=connec_id;
+    controls/demand/rules=id; frpump/frshortpipe/frvalve=element_id;
+    inlet/junction/pump/pump_additional/reservoir/shortpipe/tank/valve=node_id;
+    pipe/virtualpump/virtualvalve=arc_id; pattern/pattern_value=pattern_id.
     """
     base = f"/epa/dscenarios/{dscenario_id}/{object_type}"
     if action == "insert":

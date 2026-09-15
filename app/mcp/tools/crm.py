@@ -9,19 +9,18 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastmcp.exceptions import ToolError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DENSE_LIMIT, SchemaName, clamp_limit, tool
 from app.mcp.shaping import compact_row, unwrap
+from app.schemas.crm.crm_models import HydrometerCreate
 
 
-class HydrometerItem(BaseModel):
-    """One hydrometer row. ``code`` is required; extra CRM fields are allowed."""
+class HydrometerItem(HydrometerCreate):
+    """One hydrometer row. Field names match REST (camelCase). Unknown fields are rejected."""
 
-    model_config = ConfigDict(extra="allow")
-
-    code: str = Field(..., min_length=1, description="Hydrometer code")
+    model_config = ConfigDict(extra="forbid")
 
 
 @tool(feature="api_crm", read_only=True)
@@ -44,9 +43,12 @@ async def list_hydrometers(
     items = list(data.get("hydrometers") or [])
     if compact:
         items = [compact_row(item) for item in items]
-    count = data.get("count", len(items))
-    truncated = isinstance(count, int) and count > len(items)
-    return {"items": items, "count": count, "truncated": truncated}
+    total = data.get("count")
+    # Server-limited: REST applied LIMIT, so a full page means there may be more.
+    truncated = len(items) >= limit
+    if isinstance(total, int) and total > len(items):
+        truncated = True
+    return {"items": items, "count": total if isinstance(total, int) else len(items), "truncated": truncated}
 
 
 @tool(feature="api_crm", destructive=True)
@@ -58,7 +60,9 @@ async def manage_hydrometers(
 ) -> dict:
     """Create, update or delete hydrometers.
 
-    Each item needs ``code``. create/update send the row fields; delete uses ``code`` only.
+    Each item needs ``code``. Field names match REST: hydroNumber, connecId, stateId,
+    catalogId, categoryId, priorityId, exploitation, startDate, endDate, updateDate,
+    shutdownDate, link. Unknown fields are rejected. delete uses ``code`` only.
     Full-table replace is not available.
     """
     if not hydrometers:

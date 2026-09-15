@@ -7,11 +7,13 @@ or (at your option) any later version.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp.exceptions import ToolError
 
-_ID_KEYS = ("node_id", "arc_id", "connec_id", "gully_id", "link_id", "valve_id", "id")
+from app.schemas.features.feature_models import FEATURE_ID_MAP
+
+_ID_KEYS = ("node_id", "arc_id", "connec_id", "gully_id", "link_id", "valve_id", "feature_id", "id")
 _DROP_EXACT = {"svg", "legend", "stylesheet"}
 _DROP_SUFFIXES = ("_style", "_stylesheet", "_visibility")
 
@@ -41,6 +43,7 @@ def unwrap(resp: dict) -> dict:
 
 
 def _truncate(items: list, limit: int) -> tuple[list, bool]:
+    # Client-truncated: REST returned the full list; MCP slices. `>` is exact.
     if len(items) <= limit:
         return items, False
     return items[:limit], True
@@ -72,14 +75,65 @@ def feature_rows(resp: dict, limit: int, *, compact: bool = True) -> dict:
     data = unwrap(resp)
     items = list(data.get("features") or [])
     page = data.get("pageInfo") or {}
-    sliced, truncated = _truncate(items, limit)
+    # Server-limited: REST applied LIMIT. lastPage is floor(total/limit), so a
+    # full page is the only signal that more rows may exist.
+    truncated = len(items) >= limit
+    sliced = items[:limit]
     if compact:
         sliced = [compact_row(item) for item in sliced]
-    current = page.get("currentPage")
-    last = page.get("lastPage")
-    if isinstance(current, int) and isinstance(last, int) and last > current:
-        truncated = True
     return {"items": sliced, "count": len(sliced), "truncated": truncated, "pageInfo": page or None}
+
+
+def page_total(resp: dict) -> int:
+    """Exact row total. REST ``lastPage`` is ``floor(total / limit)``, so call with ``limit=1``."""
+    data = unwrap(resp)
+    last = (data.get("pageInfo") or {}).get("lastPage")
+    if isinstance(last, int):
+        return last
+    return len(data.get("features") or [])
+
+
+_SUMMARY_SHARED = ("code", "sys_type", "state", "x", "y")
+SUMMARY_KEEP: dict[str, frozenset[str]] = {
+    "node": frozenset((*_SUMMARY_SHARED, FEATURE_ID_MAP["node"], "node_type")),
+    "connec": frozenset((*_SUMMARY_SHARED, FEATURE_ID_MAP["connec"], "connec_type", "customer_code")),
+    "gully": frozenset((*_SUMMARY_SHARED, FEATURE_ID_MAP["gully"], "gully_type")),
+    "link": frozenset(("link_id", "sys_type", "state", "x", "y", "link_type", "feature_id")),
+    "arc": frozenset(
+        (
+            *_SUMMARY_SHARED,
+            FEATURE_ID_MAP["arc"],
+            "arc_type",
+            "cat_dnom",
+            "cat_matcat_id",
+            "node_1",
+            "node_2",
+            "gis_length",
+        )
+    ),
+}
+
+
+def shape_feature(row: dict, feature_type: str, fields: Literal["id", "summary", "full"] = "summary") -> dict:
+    """Project a feature row to ``id`` / ``summary`` / ``full``."""
+    if not isinstance(row, dict):
+        return row
+    id_key = FEATURE_ID_MAP[feature_type]
+    if fields == "id":
+        value = row.get(id_key)
+        return {id_key: value} if value is not None else {}
+    if fields == "full":
+        return compact_row(row)
+    flat = dict(row)
+    coords = row.get("coordinates")
+    if isinstance(coords, dict):
+        if flat.get("x") is None and coords.get("x") is not None:
+            flat["x"] = coords["x"]
+        if flat.get("y") is None and coords.get("y") is not None:
+            flat["y"] = coords["y"]
+    compacted = compact_row(flat)
+    keep = SUMMARY_KEEP[feature_type]
+    return {k: v for k, v in compacted.items() if k in keep}
 
 
 def list_rows(resp: dict, limit: int) -> dict:
@@ -87,6 +141,7 @@ def list_rows(resp: dict, limit: int) -> dict:
     data = unwrap(resp)
     items = list(data.get("fields") or [])
     sliced, truncated = _truncate(items, limit)
+    sliced = [compact_row(item) for item in sliced]
     return {"items": sliced, "count": len(sliced), "truncated": truncated}
 
 

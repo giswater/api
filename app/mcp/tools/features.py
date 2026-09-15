@@ -15,7 +15,7 @@ from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DEFAULT_LIMIT, SchemaName, clamp_limit, tool
-from app.mcp.shaping import feature_rows, fields_to_dict, one_row, unwrap
+from app.mcp.shaping import feature_rows, one_row, page_total, shape_feature, unwrap
 from app.schemas.features.feature_models import FeatureType
 
 _FEATURE_PATH = {
@@ -46,17 +46,17 @@ _TYPE_FILTERS = {
     "gully": frozenset({"gully_type", "gratecat_id"}),
 }
 
-_SECTION_MAP = {key: key for key in ("gully", "connec", "link", "arc", "node")}
+_FEATURE_TABLES = {
+    "ve_node": "node",
+    "ve_arc": "arc",
+    "ve_connec": "connec",
+    "ve_gully": "gully",
+    "ve_link": "link",
+}
 
 
 def _drop_none(values: dict) -> dict:
     return {k: v for k, v in values.items() if v is not None}
-
-
-def _map_search_section(section: str | None) -> str | None:
-    if not section:
-        return None
-    return _SECTION_MAP.get(section.lower(), section)
 
 
 def _reject_type_filters(feature_type: FeatureType, filters: dict) -> None:
@@ -98,74 +98,67 @@ async def find_features(
     order_by: Annotated[str | None, Field(description="Column to sort by")] = None,
     order_type: Annotated[Literal["ASC", "DESC"] | None, Field(description="Sort direction")] = None,
     limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
-    compact: Annotated[bool, Field(description="Drop nulls and QGIS style fields")] = True,
+    fields: Annotated[
+        Literal["id", "summary", "full"],
+        Field(description="id = identifiers only; summary = 6–8 locator fields (default); full = compact row"),
+    ] = "summary",
+    count_only: Annotated[bool, Field(description="Return the exact match count without rows")] = False,
 ) -> dict:
-    """Find network features (nodes, arcs, links, connecs, gullies).
+    """Find network features by typed filters and optional bbox.
 
-    Use typed filters (sys_type, dma_id, state, code, …) and an optional bbox
-    in the project CRS (x1,y1,x2,y2). Default limit 50, max 500.
+    Returns identifiers, coordinates and counts — not a full attribute dump.
+    Use ``get_feature`` for one row's attributes. ``fields``: id | summary (default) | full.
+    Shared filters (dma_id, sector_id, expl_id) are echoed once at the top level.
     """
     limit = clamp_limit(limit)
-    _reject_type_filters(
-        feature_type,
-        {
-            "expl_id": expl_id,
-            "sector_id": sector_id,
-            "dma_id": dma_id,
-            "presszone_id": presszone_id,
-            "dqa_id": dqa_id,
-            "state": state,
-            "sys_type": sys_type,
-            "code": code,
-            "node_type": node_type,
-            "nodecat_id": nodecat_id,
-            "arc_type": arc_type,
-            "arccat_id": arccat_id,
-            "cat_matcat_id": cat_matcat_id,
-            "cat_dnom": cat_dnom,
-            "connec_type": connec_type,
-            "connecat_id": connecat_id,
-            "customer_code": customer_code,
-            "gully_type": gully_type,
-            "gratecat_id": gratecat_id,
-            "link_type": link_type,
-        },
-    )
+    typed = {
+        "expl_id": expl_id,
+        "sector_id": sector_id,
+        "dma_id": dma_id,
+        "presszone_id": presszone_id,
+        "dqa_id": dqa_id,
+        "state": state,
+        "sys_type": sys_type,
+        "code": code,
+        "node_type": node_type,
+        "nodecat_id": nodecat_id,
+        "arc_type": arc_type,
+        "arccat_id": arccat_id,
+        "cat_matcat_id": cat_matcat_id,
+        "cat_dnom": cat_dnom,
+        "connec_type": connec_type,
+        "connecat_id": connecat_id,
+        "customer_code": customer_code,
+        "gully_type": gully_type,
+        "gratecat_id": gratecat_id,
+        "link_type": link_type,
+    }
+    _reject_type_filters(feature_type, typed)
     bbox_vals = (x1, y1, x2, y2)
     if any(v is not None for v in bbox_vals) and any(v is None for v in bbox_vals):
         raise ToolError("Bbox requires all of x1, y1, x2, y2 (project CRS)")
     path = f"/features/{_FEATURE_PATH[feature_type]}"
-    params = _drop_none(
-        {
-            "expl_id": expl_id,
-            "sector_id": sector_id,
-            "dma_id": dma_id,
-            "presszone_id": presszone_id,
-            "dqa_id": dqa_id,
-            "state": state,
-            "sys_type": sys_type,
-            "code": code,
-            "node_type": node_type,
-            "nodecat_id": nodecat_id,
-            "arc_type": arc_type,
-            "arccat_id": arccat_id,
-            "cat_matcat_id": cat_matcat_id,
-            "cat_dnom": cat_dnom,
-            "connec_type": connec_type,
-            "connecat_id": connecat_id,
-            "customer_code": customer_code,
-            "gully_type": gully_type,
-            "gratecat_id": gratecat_id,
-            "link_type": link_type,
-            "orderBy": order_by,
-            "orderType": order_type,
-            "limit": limit,
-        }
-    )
+    params = _drop_none({**typed, "orderBy": order_by, "orderType": order_type, "limit": limit})
     if None not in bbox_vals:
         params["coordinates"] = json.dumps({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
-    raw = await api.get(path, schema=schema, params=params)
-    return feature_rows(raw, limit=limit, compact=compact)
+    echoed = _drop_none({"dma_id": dma_id, "sector_id": sector_id, "expl_id": expl_id})
+
+    async def _total() -> int:
+        return page_total(await api.get(path, schema=schema, params={**params, "limit": 1}))
+
+    if count_only:
+        total = await _total()
+        return {"items": [], "count": total, "total": total, "truncated": False, "filters": echoed}
+    shaped = feature_rows(await api.get(path, schema=schema, params=params), limit=limit)
+    items = [shape_feature(item, feature_type, fields) for item in shaped["items"]]
+    total = await _total() if shaped["truncated"] else len(items)
+    return {
+        "items": items,
+        "count": len(items),
+        "truncated": shaped["truncated"],
+        "total": total,
+        "filters": echoed,
+    }
 
 
 @tool(feature="api_features", read_only=True)
@@ -182,24 +175,31 @@ async def get_feature(
 
 
 @tool(feature="api_basic", read_only=True)
-async def search_features(
+async def search(
     api: TenantApi,
     schema: SchemaName,
     text: Annotated[str, Field(description="Free-text search string")],
     limit: Annotated[int, Field(description="Max hits to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
-    """Free-text search across features. Returns flattened hits (section, table, id, label)."""
+    """Free-text search across whatever the project configured as searchable.
+
+    Hits may be network features, addresses, mincuts, workcats, or other entities.
+    ``feature_type`` is set only for ``ve_node`` / ``ve_arc`` / ``ve_connec`` /
+    ``ve_gully`` / ``ve_link`` rows; only those can be passed to ``get_feature``.
+    """
     limit = clamp_limit(limit)
     raw = await api.get("/basic/getsearch", schema=schema, params={"searchText": text})
     data = unwrap(raw)
     items = []
     for section in data.get("searchResults") or []:
-        mapped = _map_search_section(section.get("section") or section.get("alias"))
+        table = section.get("tableName")
+        feature_type = _FEATURE_TABLES.get(table) if isinstance(table, str) else None
         for value in section.get("values") or []:
             items.append(
                 {
-                    "section": mapped,
-                    "table": section.get("tableName"),
+                    "section": section.get("section") or section.get("alias"),
+                    "table": table,
+                    "feature_type": feature_type,
                     "id": value.get("value") or value.get("key"),
                     "label": value.get("displayName") or value.get("value"),
                 }
@@ -220,24 +220,29 @@ async def get_feature_at_point(
         float,
         Field(
             description=(
-                "Current map zoom/scale the user is viewing; sets click tolerance for snapping to a feature. "
-                "Pass the web map client's zoom if available."
+                "Snapping radius in CRS units. Determines which feature wins: "
+                "Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
             )
         ),
     ] = 1000,
 ) -> dict:
-    """Identify the network feature at project-CRS coordinates (not WGS84 lat/lon)."""
+    """Identify the network feature at project-CRS coordinates (not WGS84 lat/lon).
+
+    Resolves id and type at the click, then returns the same compact row as
+    ``get_feature``. ``zoom_ratio`` is a snapping radius (default 1000).
+    """
     raw = await api.get(
         "/basic/getinfofromcoordinates",
         schema=schema,
         params={"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio},
     )
-    data = unwrap(raw)
     body = raw.get("body") if isinstance(raw.get("body"), dict) else {}
     feature = body.get("feature") or {}
-    return {
-        "feature_id": feature.get("id"),
-        "feature_type": feature.get("featureType") or feature.get("childType"),
-        "table": feature.get("tableName"),
-        "fields": fields_to_dict(data.get("fields"), skip_hidden=True, drop_nulls=True),
-    }
+    feature_id = feature.get("id")
+    raw_type = feature.get("featureType") or feature.get("childType")
+    feature_type = str(raw_type).lower() if raw_type else None
+    header = {"feature_id": feature_id, "feature_type": feature_type, "table": feature.get("tableName")}
+    if not feature_id or feature_type not in _FEATURE_PATH:
+        return header
+    row = one_row(await api.get(f"/features/{_FEATURE_PATH[feature_type]}/{feature_id}", schema=schema))
+    return {**header, **row}

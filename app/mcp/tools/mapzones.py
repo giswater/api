@@ -11,7 +11,7 @@ from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DEFAULT_LIMIT, DENSE_LIMIT, SchemaName, clamp_limit, tool
-from app.mcp.shaping import compact_row, feature_rows, unwrap
+from app.mcp.shaping import compact_row, feature_rows, shape_feature, unwrap
 
 ZoneType = Literal[
     "dma",
@@ -52,19 +52,6 @@ _ZONE_LIST_KEY: dict[ZoneType, str] = {
     "omunit": "omunits",
 }
 
-_CONNEC_KEEP = {
-    "connec_id",
-    "code",
-    "customer_code",
-    "sys_type",
-    "connec_type",
-    "dma_id",
-    "sector_id",
-    "state",
-    "expl_id",
-    "cat_dnom",
-}
-
 
 def _drop_geometry(items: list[Any]) -> list[Any]:
     out = []
@@ -87,7 +74,8 @@ async def list_mapzones(
     limit = clamp_limit(limit)
     raw = await api.get(_ZONE_PATH[zone_type], schema=schema)
     data = unwrap(raw)
-    items = _drop_geometry(list(data.get(_ZONE_LIST_KEY[zone_type]) or []))
+    items = [compact_row(item) for item in _drop_geometry(list(data.get(_ZONE_LIST_KEY[zone_type]) or []))]
+    # Client-truncated: REST returns the full list; MCP slices.
     truncated = len(items) > limit
     items = items[:limit]
     return {"zone_type": zone_type, "items": items, "count": len(items), "truncated": truncated}
@@ -104,14 +92,10 @@ async def get_dma_contents(
     """DMA contents: hydrometers or connecs (curated columns)."""
     limit = clamp_limit(limit)
     if content == "connecs":
+        # Server-limited: REST applied LIMIT (see feature_rows).
         raw = await api.get("/features/connecs", schema=schema, params={"dma_id": dma_id, "limit": limit})
         shaped = feature_rows(raw, limit=limit)
-        items = []
-        for item in shaped["items"]:
-            if isinstance(item, dict):
-                items.append({k: v for k, v in item.items() if k in _CONNEC_KEEP})
-            else:
-                items.append(item)
+        items = [shape_feature(item, "connec", "summary") for item in shaped["items"]]
         return {
             "dma_id": dma_id,
             "content": content,
@@ -122,6 +106,7 @@ async def get_dma_contents(
     raw = await api.get(f"/om/dmas/{dma_id}/hydrometers", schema=schema)
     data = unwrap(raw)
     items = list(data.get("hydrometers") or [])
+    # Client-truncated: REST returns the full list; MCP slices.
     truncated = len(items) > limit
     items = items[:limit]
     return {"dma_id": dma_id, "content": content, "items": items, "count": len(items), "truncated": truncated}

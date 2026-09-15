@@ -299,7 +299,7 @@ _EXPECTED_TOOLS = {
     "manage_dscenario_objects",
     "find_features",
     "get_feature",
-    "search_features",
+    "search",
     "get_feature_at_point",
     "list_mapzones",
     "get_dma_contents",
@@ -323,7 +323,7 @@ _READ_ONLY = {
     "list_dscenario_objects",
     "find_features",
     "get_feature",
-    "search_features",
+    "search",
     "get_feature_at_point",
     "list_mapzones",
     "get_dma_contents",
@@ -391,11 +391,12 @@ def test_mcp_find_features_compact(client, default_params):
     if not items:
         pytest.skip("no nodes")
     row = items[0]
+    assert "node_id" in row
     assert not any(key.endswith("_style") or key.endswith("_visibility") for key in row)
     full_resp, full_body = _call_tool(
         client,
         "find_features",
-        {"schema": default_params["schema"], "feature_type": "node", "limit": 1, "compact": False},
+        {"schema": default_params["schema"], "feature_type": "node", "limit": 1, "fields": "full"},
     )
     assert full_resp.status_code == 200, full_resp.text
     full_items = _tool_data(full_body).get("items") or []
@@ -478,7 +479,10 @@ def test_mcp_get_feature_at_point_ws(client, default_params):
     result = body.get("result") or {}
     assert result.get("isError") in (None, False)
     data = _tool_data(body)
-    assert "fields" in data or "feature_id" in data
+    assert data.get("feature_id")
+    keys = list(data)
+    assert not any(k.startswith(("btn_", "tbl_", "hspacer_")) for k in keys)
+    assert "fields" not in data
 
 
 @pytest.mark.ud
@@ -497,3 +501,159 @@ def test_mcp_get_feature_at_point_ud(client, default_params):
     assert resp.status_code == 200, resp.text
     result = body.get("result") or {}
     assert result.get("isError") in (None, False)
+    data = _tool_data(body)
+    keys = list(data) if isinstance(data, dict) else []
+    assert not any(k.startswith(("btn_", "tbl_", "hspacer_")) for k in keys)
+
+
+def test_summarise_mincut_drops_feature_collections():
+    from app.mcp.tools.mincut import _summarise_mincut
+
+    raw = {
+        "mincutId": 1,
+        "mincutState": 0,
+        "geometry": {"bbox": {"x1": 1, "y1": 2, "x2": 3, "y2": 4}},
+        "info": {"descript": "x"},
+        "mincutNode": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"node_id": 10},
+                    "geometry": {"type": "Point", "coordinates": [1, 2]},
+                }
+            ],
+        },
+        "mincutArc": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"arc_id": 20},
+                    "geometry": {"type": "LineString", "coordinates": [[1, 2], [3, 4]]},
+                }
+            ],
+        },
+    }
+    summary = _summarise_mincut(raw, include_geometry=False)
+    dumped = json.dumps(summary)
+    assert "FeatureCollection" not in dumped
+    assert summary["mincut_id"] == 1
+    assert summary["categories"]["node"]["ids"] == [10]
+    assert summary["categories"]["arc"]["ids"] == [20]
+    with_geom = _summarise_mincut(raw, include_geometry=True)
+    assert "FeatureCollection" in json.dumps(with_geom)
+
+
+def test_flow_point_ids_group_by_feature_type():
+    from app.mcp.tools.network import _flow_point_ids
+
+    fc = {
+        "type": "FeatureCollection",
+        "features": [
+            {"properties": {"feature_id": 1, "feature_type": "NODE"}},
+            {"properties": {"feature_id": 2, "feature_type": "CONNEC"}},
+            {"properties": {"feature_id": 3, "feature_type": "GULLY"}},
+            {"properties": {"feature_id": 4, "feature_type": "NODE"}},
+        ],
+    }
+    grouped = _flow_point_ids(fc)
+    assert grouped["node_ids"] == [1, 4]
+    assert grouped["connec_ids"] == [2]
+    assert grouped["gully_ids"] == [3]
+
+
+@pytest.mark.ws
+def test_mcp_find_features_truncated(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "sys_type": ["VALVE"], "limit": 27},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") in (None, False)
+    data = _tool_data(body)
+    items = data.get("items") or []
+    if len(items) < 27 and not data.get("truncated"):
+        pytest.skip("not enough valves to exercise truncation")
+    assert data["truncated"] is True
+    assert data["count"] == 27
+
+
+@pytest.mark.ud
+def test_mcp_trace_flow_ids(client, default_params):
+    assert_ready(client)
+    listed, listed_body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "limit": 1},
+    )
+    if listed.status_code != 200:
+        pytest.skip(listed.text)
+    items = _tool_data(listed_body).get("items") or []
+    node_id = next((item.get("node_id") for item in items if item.get("node_id") is not None), None)
+    if node_id is None:
+        pytest.skip("no nodes")
+    resp, body = _call_tool(
+        client,
+        "trace_flow",
+        {"schema": default_params["schema"], "direction": "downstream", "node_id": int(node_id)},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(body))
+    data = _tool_data(body)
+    counts = data.get("counts") or {}
+    assert len(data.get("node_ids") or []) == counts.get("nodes", 0)
+    assert len(data.get("connec_ids") or []) == counts.get("connecs", 0)
+    assert len(data.get("gully_ids") or []) == counts.get("gullies", 0)
+    assert len(data.get("arc_ids") or []) == counts.get("arcs", 0)
+    assert counts.get("nodes") or counts.get("arcs")
+
+
+@pytest.mark.ws
+def test_mcp_list_hydrometers_truncated(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(client, "list_hydrometers", {"schema": default_params["schema"], "limit": 1})
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(body))
+    data = _tool_data(body)
+    items = data.get("items") or []
+    if not items:
+        pytest.skip("no hydrometers")
+    assert data["count"] >= len(items)
+    if data["count"] == 1:
+        pytest.skip("only one hydrometer")
+    assert data["truncated"] is True
+    assert data["count"] > len(items)
+
+
+@pytest.mark.ws
+def test_mcp_water_balance_dma_ids(client, default_params):
+    assert_ready(client)
+    listed, listed_body = _call_tool(client, "get_water_balance", {"schema": default_params["schema"]})
+    if listed.status_code != 200:
+        pytest.skip(listed.text)
+    result = (listed_body or {}).get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(listed_body))
+    items = _tool_data(listed_body).get("items") or []
+    if not items:
+        pytest.skip("no waterbalance rows")
+    dma_id = items[0].get("dma_id")
+    resp, body = _call_tool(
+        client,
+        "get_water_balance",
+        {"schema": default_params["schema"], "dma_ids": [int(dma_id)]},
+    )
+    assert resp.status_code == 200, resp.text
+    call_result = body.get("result") or {}
+    assert call_result.get("isError") in (None, False)
+    filtered = _tool_data(body).get("items") or []
+    assert filtered
+    assert all(row.get("dma_id") == dma_id for row in filtered)
