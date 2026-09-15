@@ -125,8 +125,8 @@ async def create_mincut(
         float,
         Field(
             description=(
-                "Current map zoom/scale the user is viewing; sets click tolerance for snapping to a feature. "
-                "Pass the web map client's zoom if available."
+                "Snapping radius in CRS units. Determines which feature wins: "
+                "Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
             )
         ),
     ] = 1000,
@@ -163,7 +163,7 @@ async def update_mincut(
     if exec_:
         body["exec"] = exec_
     raw = await api.patch(f"/om/mincuts/{mincut_id}", schema=schema, json=body)
-    return unwrap(raw)
+    return _summarise_mincut(unwrap(raw), include_geometry=False)
 
 
 @tool(feature="api_mincut")
@@ -177,7 +177,7 @@ async def toggle_mincut_valve(
     """Toggle a mincut valve. This is a TOGGLE, not a setter: calling twice restores the original state. Do not retry after a timeout."""
     path = f"/om/mincuts/{mincut_id}/valves/{valve_id}/toggle-{change}"
     raw = await api.post(path, schema=schema, json={"use_psectors": False})
-    return unwrap(raw)
+    return _summarise_mincut(unwrap(raw), include_geometry=False)
 
 
 @tool(feature="api_mincut", destructive=True)
@@ -194,7 +194,7 @@ async def set_mincut_state(
     if action == "end":
         body["shutoff_required"] = shutoff_required
     raw = await api.post(path, schema=schema, json=body or None)
-    return unwrap(raw)
+    return _summarise_mincut(unwrap(raw), include_geometry=False)
 
 
 @tool(feature="api_mincut", destructive=True)
@@ -204,4 +204,6 @@ async def delete_mincut(
     mincut_id: Annotated[int, Field(description="Mincut id")],
 ) -> dict:
     """Permanently delete a mincut record."""
-    return unwrap(await api.delete(f"/om/mincuts/{mincut_id}", schema=schema))
+    return _summarise_mincut(
+        unwrap(await api.delete(f"/om/mincuts/{mincut_id}", schema=schema)), include_geometry=False
+    )

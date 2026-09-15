@@ -340,3 +340,19 @@ def test_get_waterbalance(client, default_params):
     data = response.json()
     assert data["status"] == "Accepted"
     assert "body" in data
+
+
+@pytest.mark.ws
+def test_get_waterbalance_filter_dma_id(client, default_params):
+    assert_ready(client)
+    listed = client.get(api("/om/waterbalance"), params=default_params)
+    assert listed.status_code == 200, listed.text
+    rows = ((listed.json().get("body") or {}).get("data") or {}).get("waterbalance") or []
+    if not rows:
+        pytest.skip("no waterbalance rows")
+    dma_id = rows[0].get("dma_id")
+    response = client.get(api("/om/waterbalance"), params={**default_params, "dma_id": dma_id})
+    assert response.status_code == 200, response.text
+    filtered = ((response.json().get("body") or {}).get("data") or {}).get("waterbalance") or []
+    assert filtered
+    assert all(row.get("dma_id") == dma_id for row in filtered)

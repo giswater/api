@@ -12,12 +12,24 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from app.core.exceptions import DatabaseUnavailableError
-from app.db.execution import execute_sql_select
+from app.db.execution import execute_sql
 from app.schemas.crm.crm_models import HydrometerCreate, HydrometerUpdate
 from app.services.context import ServiceContext
 from app.services.helpers import accepted_data_response
 from app.services.procedure import run_procedure
 from app.utils.body import create_body_dict
+
+
+def _split_total_count(rows: list[dict]) -> tuple[list[dict], int]:
+    if not rows:
+        return [], 0
+    total = int(rows[0].get("total_count") or 0)
+    out = []
+    for row in rows:
+        item = dict(row)
+        item.pop("total_count", None)
+        out.append(item)
+    return out, total
 
 
 class CrmService:
@@ -47,13 +59,14 @@ class CrmService:
                 clauses.append("code = %s")
                 params.append(code)
             where = " AND ".join(clauses) if clauses else "TRUE"
-            where = f"{where} LIMIT {int(limit)}"
-            rows = await execute_sql_select(
+            query = (
+                "SELECT *, count(*) OVER () AS total_count "
+                f"FROM {{schema}}.v_hydrometer WHERE {where} LIMIT {int(limit)}"
+            )
+            rows = await execute_sql(
                 self.ctx.logger,
                 self.ctx.db_manager,
-                table_name="v_hydrometer",
-                columns=None,
-                where_clause=where,
+                query,
                 parameters=tuple(params) if params else None,
                 schema=self.ctx.schema,
                 user=self.ctx.user_id,
@@ -61,10 +74,11 @@ class CrmService:
             )
         else:
             rows = await self._list_hydrometers_joined(code=code, connec_id=connec_id, dma_id=dma_id, limit=limit)
+        rows, total = _split_total_count(rows)
         return await accepted_data_response(
             self.ctx,
             "Fetched hydrometers successfully",
-            {"hydrometers": rows, "count": len(rows)},
+            {"hydrometers": rows, "count": total},
         )
 
     async def _list_hydrometers_joined(
@@ -88,7 +102,7 @@ class CrmService:
             clauses.append("c.dma_id = %s")
             params.append(dma_id)
         query = sql.SQL(
-            "SELECT h.* FROM {schema}.v_hydrometer h "
+            "SELECT h.*, count(*) OVER () AS total_count FROM {schema}.v_hydrometer h "
             "LEFT JOIN {schema}.vf_hydrometer f ON f.hydrometer_id = h.hydrometer_id "
             "LEFT JOIN {schema}.ve_connec c ON c.connec_id = f.feature_id "
             "WHERE {where} LIMIT {limit}"

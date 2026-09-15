@@ -14,6 +14,27 @@ from app.mcp.client import TenantApi
 from app.mcp.registry import SchemaName, tool
 from app.mcp.shaping import compact_row, fc_summary, unwrap
 
+_POINT_GROUPS = {"NODE": "node_ids", "CONNEC": "connec_ids", "GULLY": "gully_ids"}
+
+
+def _flow_point_ids(fc: dict | None) -> dict[str, list]:
+    grouped = {"node_ids": [], "connec_ids": [], "gully_ids": []}
+    if not isinstance(fc, dict):
+        return grouped
+    for feat in fc.get("features") or []:
+        if not isinstance(feat, dict):
+            continue
+        props = feat.get("properties") or {}
+        key = _POINT_GROUPS.get(str(props.get("feature_type") or "").upper())
+        if not key:
+            continue
+        fid = props.get("feature_id")
+        if fid is None:
+            fid = next((props[k] for k in ("node_id", "connec_id", "gully_id", "id") if k in props), None)
+        if fid is not None:
+            grouped[key].append(fid)
+    return grouped
+
 
 @tool(feature="api_flow", read_only=True)
 async def trace_flow(
@@ -28,8 +49,8 @@ async def trace_flow(
         float,
         Field(
             description=(
-                "Current map zoom/scale the user is viewing; sets click tolerance for snapping to a feature. "
-                "Pass the web map client's zoom if available."
+                "Snapping radius in CRS units. Determines which feature wins: "
+                "Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
             )
         ),
     ] = 1000,
@@ -49,13 +70,18 @@ async def trace_flow(
         raise ToolError("Provide node_id, or x + y + epsg (project CRS, not lat/lon)")
     raw = await api.post("/om/flow", schema=schema, json=body)
     data = unwrap(raw)
-    point = fc_summary(data.get("point"), "node_id")
+    points = _flow_point_ids(data.get("point"))
     line = fc_summary(data.get("line"), "arc_id")
     result = {
         "init_node": data.get("initPoint"),
-        "node_ids": point["ids"],
+        **points,
         "arc_ids": line["ids"],
-        "counts": {"nodes": point["count"], "arcs": line["count"]},
+        "counts": {
+            "nodes": len(points["node_ids"]),
+            "connecs": len(points["connec_ids"]),
+            "gullies": len(points["gully_ids"]),
+            "arcs": line["count"],
+        },
     }
     if include_geometry:
         result["point"] = data.get("point")
