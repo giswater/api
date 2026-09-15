@@ -65,7 +65,7 @@ def _summarise_mincut(data: dict, include_geometry: bool) -> dict:
     return result
 
 
-@tool(feature="api_mincut", read_only=True)
+@tool(feature="api_mincut", read_only=True, project_types={"WS"})
 async def list_mincuts(
     api: TenantApi,
     schema: SchemaName,
@@ -86,7 +86,7 @@ async def list_mincuts(
     return list_rows(raw, limit=limit)
 
 
-@tool(feature="api_mincut", read_only=True)
+@tool(feature="api_mincut", read_only=True, project_types={"WS"})
 async def get_mincut(
     api: TenantApi,
     schema: SchemaName,
@@ -98,7 +98,7 @@ async def get_mincut(
     return _summarise_mincut(unwrap(raw), include_geometry)
 
 
-@tool(feature="api_mincut", read_only=True)
+@tool(feature="api_mincut", read_only=True, project_types={"WS"})
 async def list_mincut_valves(
     api: TenantApi,
     schema: SchemaName,
@@ -111,13 +111,13 @@ async def list_mincut_valves(
     return list_rows(raw, limit=limit)
 
 
-@tool(feature="api_mincut")
+@tool(feature="api_mincut", project_types={"WS"})
 async def create_mincut(
     api: TenantApi,
     schema: SchemaName,
     x: Annotated[float, Field(description="X coordinate in the project CRS (not WGS84)")],
     y: Annotated[float, Field(description="Y coordinate in the project CRS (not WGS84)")],
-    epsg: Annotated[int, Field(description="Project EPSG from list_schemas (not 4326)")],
+    epsg: Annotated[int | None, Field(description="Project EPSG; omit to use the schema EPSG")] = None,
     mincut_type: Annotated[Literal["Demo", "Test", "Real"], Field(description="Mincut type")] = "Demo",
     anl_cause: Annotated[Literal["Accidental", "Planified"], Field(description="Cause")] = "Accidental",
     anl_descript: Annotated[str | None, Field(description="Optional description")] = None,
@@ -132,6 +132,7 @@ async def create_mincut(
     ] = 1000,
 ) -> dict:
     """Create an unplanned mincut at project-CRS coordinates (not WGS84). Not idempotent — retrying creates a duplicate."""
+    epsg = await api.resolve_epsg(schema, epsg)
     body = {
         "coordinates": {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio},
         "plan": {
@@ -145,7 +146,7 @@ async def create_mincut(
     return _summarise_mincut(unwrap(raw), include_geometry=False)
 
 
-@tool(feature="api_mincut")
+@tool(feature="api_mincut", project_types={"WS"})
 async def update_mincut(
     api: TenantApi,
     schema: SchemaName,
@@ -166,7 +167,7 @@ async def update_mincut(
     return _summarise_mincut(unwrap(raw), include_geometry=False)
 
 
-@tool(feature="api_mincut")
+@tool(feature="api_mincut", project_types={"WS"})
 async def toggle_mincut_valve(
     api: TenantApi,
     schema: SchemaName,
@@ -180,7 +181,7 @@ async def toggle_mincut_valve(
     return _summarise_mincut(unwrap(raw), include_geometry=False)
 
 
-@tool(feature="api_mincut", destructive=True)
+@tool(feature="api_mincut", destructive=True, project_types={"WS"})
 async def set_mincut_state(
     api: TenantApi,
     schema: SchemaName,
@@ -197,7 +198,7 @@ async def set_mincut_state(
     return _summarise_mincut(unwrap(raw), include_geometry=False)
 
 
-@tool(feature="api_mincut", destructive=True)
+@tool(feature="api_mincut", destructive=True, project_types={"WS"})
 async def delete_mincut(
     api: TenantApi,
     schema: SchemaName,

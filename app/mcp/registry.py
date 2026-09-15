@@ -42,6 +42,7 @@ class ToolSpec:
     fn: Callable[..., Any]
     feature: str | None
     annotations: dict[str, bool]
+    project_types: frozenset[str] | None = None
 
     def bind(self, api: Any) -> Callable[..., Any]:
         """Bind ``api`` as the first argument and hide it from the MCP schema."""
@@ -64,18 +65,35 @@ class ToolSpec:
         return bound
 
 
+def spec_by_name(name: str | None) -> ToolSpec | None:
+    if not name:
+        return None
+    return next((spec for spec in REGISTRY if spec.fn.__name__ == name), None)
+
+
 def tool(
-    *, feature: str | None = None, read_only: bool = False, destructive: bool = False, idempotent: bool | None = None
+    *,
+    feature: str | None = None,
+    read_only: bool = False,
+    destructive: bool = False,
+    idempotent: bool | None = None,
+    project_types: set[str] | frozenset[str] | None = None,
 ):
     """Register a curated MCP tool. ``feature`` is a TenantSettings ``api_*`` flag.
 
     Defaults match the MCP spec: writes are not idempotent; reads are.
     ``openWorldHint`` is always true (tools hit a live Giswater DB).
+    ``project_types`` restricts the tool to WS and/or UD schemas (enforced at call time).
     """
 
     def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
         if feature is not None and feature not in _TENANT_SETTING_FIELDS:
             raise ValueError(f"Unknown tenant feature flag {feature!r} on {fn.__name__}")
+        types = frozenset(t.upper() for t in project_types) if project_types else None
+        if types:
+            restriction = f"Restricted to {'/'.join(sorted(types))} schemas."
+            doc = (fn.__doc__ or "").rstrip()
+            fn.__doc__ = f"{doc}\n\n{restriction}" if doc else restriction
         REGISTRY.append(
             ToolSpec(
                 fn,
@@ -86,6 +104,7 @@ def tool(
                     "idempotentHint": read_only if idempotent is None else idempotent,
                     "openWorldHint": True,
                 },
+                types,
             )
         )
         return fn

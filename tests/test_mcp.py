@@ -401,8 +401,11 @@ def test_mcp_find_features_compact(client, default_params):
     assert full_resp.status_code == 200, full_resp.text
     full_items = _tool_data(full_body).get("items") or []
     if full_items:
-        assert len(full_items[0]) >= len(row)
-        assert set(row).issubset(full_items[0])
+        assert len(full_items[0]) > len(row)
+        assert "node_id" in full_items[0]
+        coords = full_items[0].get("coordinates") or {}
+        if "x" in row:
+            assert row["x"] == coords.get("x") or row["x"] == full_items[0].get("x")
 
 
 def test_mcp_partial_bbox_errors(client, default_params):
@@ -657,3 +660,171 @@ def test_mcp_water_balance_dma_ids(client, default_params):
     filtered = _tool_data(body).get("items") or []
     assert filtered
     assert all(row.get("dma_id") == dma_id for row in filtered)
+
+
+def test_mcp_find_features_fields_id_and_count_only(client, default_params):
+    assert_ready(client)
+    schema = default_params["schema"]
+    listed, listed_body = _call_tool(
+        client,
+        "find_features",
+        {"schema": schema, "feature_type": "node", "limit": 3, "expl_id": 1},
+    )
+    assert listed.status_code == 200, listed.text
+    result = listed_body.get("result") or {}
+    assert result.get("isError") in (None, False)
+    data = _tool_data(listed_body)
+    items = data.get("items") or []
+    if not items:
+        pytest.skip("no nodes")
+    assert data.get("filters") == {"expl_id": 1} or data.get("filters", {}).get("expl_id") == 1
+    assert "total" in data
+    row = items[0]
+    assert set(row) <= {
+        "node_id",
+        "code",
+        "sys_type",
+        "state",
+        "x",
+        "y",
+        "node_type",
+    }
+    ids_resp, ids_body = _call_tool(
+        client,
+        "find_features",
+        {"schema": schema, "feature_type": "node", "limit": 3, "fields": "id"},
+    )
+    assert ids_resp.status_code == 200, ids_resp.text
+    id_row = (_tool_data(ids_body).get("items") or [{}])[0]
+    assert set(id_row) <= {"node_id"}
+    count_resp, count_body = _call_tool(
+        client,
+        "find_features",
+        {"schema": schema, "feature_type": "node", "count_only": True},
+    )
+    assert count_resp.status_code == 200, count_resp.text
+    counted = _tool_data(count_body)
+    assert counted.get("items") == []
+    assert counted.get("count") == counted.get("total")
+    assert isinstance(counted.get("total"), int)
+
+
+def test_mcp_search_feature_type(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(client, "search", {"schema": default_params["schema"], "text": "1"})
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(body))
+    items = _tool_data(body).get("items") or []
+    if not items:
+        pytest.skip("no search hits")
+    known = {"ve_node": "node", "ve_arc": "arc", "ve_connec": "connec", "ve_gully": "gully", "ve_link": "link"}
+    for item in items:
+        table = item.get("table")
+        if table in known:
+            assert item.get("feature_type") == known[table]
+        else:
+            assert item.get("feature_type") is None
+
+
+def test_mcp_ws_only_tools_declare_restriction():
+    from app.mcp.registry import REGISTRY
+
+    spec = next(s for s in REGISTRY if s.fn.__name__ == "list_mincuts")
+    assert spec.project_types == frozenset({"WS"})
+    assert "Restricted to WS schemas" in (spec.fn.__doc__ or "")
+    flow = next(s for s in REGISTRY if s.fn.__name__ == "trace_flow")
+    assert flow.project_types == frozenset({"UD"})
+
+
+@pytest.mark.ws
+def test_mcp_gully_rejected_on_ws(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "gully", "limit": 1},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    payload = json.dumps(body)
+    assert "UD" in payload
+    assert "ve_gully" not in payload
+
+
+@pytest.mark.ws
+def test_mcp_trace_flow_rejected_on_ws(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "trace_flow",
+        {"schema": default_params["schema"], "direction": "downstream", "node_id": 1},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    payload = json.dumps(body)
+    assert "UD" in payload
+    assert "does not exist" not in payload
+
+
+@pytest.mark.ud
+def test_mcp_mincut_rejected_on_ud(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(client, "list_mincuts", {"schema": default_params["schema"]})
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    payload = json.dumps(body)
+    assert "WS" in payload
+    assert "EXECUTE is null" not in payload
+
+
+@pytest.mark.ud
+def test_mcp_presszone_rejected_on_ud(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "list_mapzones",
+        {"schema": default_params["schema"], "zone_type": "presszone"},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    payload = json.dumps(body)
+    assert "WS" in payload
+    assert "does not exist" not in payload
+
+
+@pytest.mark.ud
+def test_mcp_dma_rejected_on_ud(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "list_mapzones",
+        {"schema": default_params["schema"], "zone_type": "dma"},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    payload = json.dumps(body)
+    assert "WS" in payload
+    assert "macrodma_id" not in payload
+
+
+@pytest.mark.ws
+def test_mcp_epsg_mismatch(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "get_feature_at_point",
+        {"schema": default_params["schema"], "x": 419487.25, "y": 4576484.26, "epsg": 4326},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") is True
+    payload = json.dumps(body).lower()
+    assert "reproject" in payload or "epsg" in payload
+    assert "null" not in payload or "does not match" in payload

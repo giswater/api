@@ -36,7 +36,7 @@ def _flow_point_ids(fc: dict | None) -> dict[str, list]:
     return grouped
 
 
-@tool(feature="api_flow", read_only=True)
+@tool(feature="api_flow", read_only=True, project_types={"UD"})
 async def trace_flow(
     api: TenantApi,
     schema: SchemaName,
@@ -59,15 +59,16 @@ async def trace_flow(
     """Trace flow upstream or downstream from a node id or project-CRS coordinates.
 
     Coordinates must be in the project EPSG (not WGS84 lat/lon). Provide either
-    ``node_id`` or ``x``+``y``+``epsg``.
+    ``node_id`` or ``x``+``y``. ``epsg`` is optional and must match the schema.
     """
     body: dict = {"direction": direction}
     if node_id is not None:
         body["node_id"] = node_id
-    elif None not in (x, y, epsg):
+    elif None not in (x, y):
+        epsg = await api.resolve_epsg(schema, epsg)
         body["coordinates"] = {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio}
     else:
-        raise ToolError("Provide node_id, or x + y + epsg (project CRS, not lat/lon)")
+        raise ToolError("Provide node_id, or x + y (project CRS, not lat/lon)")
     raw = await api.post("/om/flow", schema=schema, json=body)
     data = unwrap(raw)
     points = _flow_point_ids(data.get("point"))

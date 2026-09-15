@@ -32,11 +32,12 @@ def failed_text(resp: dict | None) -> str | None:
 
 
 def unwrap(resp: dict) -> dict:
-    """Return ``body.data`` from a Giswater envelope; raise on Failed."""
+    """Return ``body.data`` from a Giswater envelope.
+
+    Failed envelopes are rejected in ``TenantApi._send`` before they reach here.
+    """
     if not isinstance(resp, dict):
         raise ToolError("Unexpected response from API")
-    if resp.get("status") == "Failed":
-        raise ToolError(failed_text(resp) or "API request failed")
     body = resp.get("body") or {}
     data = body.get("data") if isinstance(body, dict) else None
     return data if isinstance(data, dict) else {}
@@ -206,11 +207,3 @@ def fc_summary(fc: dict | None, id_key: str | None = None) -> dict:
         _walk_coords(geom.get("coordinates"), xs, ys)
     bbox = [min(xs), min(ys), max(xs), max(ys)] if xs and ys else None
     return {"count": len(features), "ids": ids, "bbox": bbox}
-
-
-def drop_keys(obj: Any, *keys: str) -> Any:
-    """Return a shallow copy of ``obj`` without ``keys`` (dicts only)."""
-    if not isinstance(obj, dict):
-        return obj
-    drop = set(keys)
-    return {k: v for k, v in obj.items() if k not in drop}

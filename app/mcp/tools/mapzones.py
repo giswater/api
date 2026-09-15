@@ -7,6 +7,7 @@ or (at your option) any later version.
 
 from typing import Annotated, Any, Literal
 
+from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from app.mcp.client import TenantApi
@@ -52,6 +53,8 @@ _ZONE_LIST_KEY: dict[ZoneType, str] = {
     "omunit": "omunits",
 }
 
+_WS_ONLY_ZONES = frozenset({"dma", "macrodma", "presszone", "dqa", "macrodqa"})
+
 
 def _drop_geometry(items: list[Any]) -> list[Any]:
     out = []
@@ -63,6 +66,16 @@ def _drop_geometry(items: list[Any]) -> list[Any]:
     return out
 
 
+async def _reject_ws_only_zone(api: TenantApi, schema: str, zone_type: ZoneType) -> None:
+    if zone_type not in _WS_ONLY_ZONES:
+        return
+    project_type = ((await api.schema_meta(schema)).get("project_type") or "").upper()
+    if project_type != "WS":
+        raise ToolError(
+            f"list_mapzones(zone_type={zone_type!r}) is WS-only; schema {schema} is {project_type or 'unknown'}."
+        )
+
+
 @tool(feature="api_mapzones", read_only=True)
 async def list_mapzones(
     api: TenantApi,
@@ -70,8 +83,12 @@ async def list_mapzones(
     zone_type: Annotated[ZoneType, Field(description="Mapzone class (dma, sector, presszone, dqa, omzone, …)")],
     limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
-    """List mapzones of one type (dma, sector, presszone, dqa, omzone, …). Geometry is omitted."""
+    """List mapzones of one type (dma, sector, presszone, dqa, omzone, …). Geometry is omitted.
+
+    dma / macrodma / presszone / dqa / macrodqa are WS-only.
+    """
     limit = clamp_limit(limit)
+    await _reject_ws_only_zone(api, schema, zone_type)
     raw = await api.get(_ZONE_PATH[zone_type], schema=schema)
     data = unwrap(raw)
     items = [compact_row(item) for item in _drop_geometry(list(data.get(_ZONE_LIST_KEY[zone_type]) or []))]
@@ -81,7 +98,7 @@ async def list_mapzones(
     return {"zone_type": zone_type, "items": items, "count": len(items), "truncated": truncated}
 
 
-@tool(feature="api_mapzones", read_only=True)
+@tool(feature="api_mapzones", read_only=True, project_types={"WS"})
 async def get_dma_contents(
     api: TenantApi,
     schema: SchemaName,
@@ -112,7 +129,7 @@ async def get_dma_contents(
     return {"dma_id": dma_id, "content": content, "items": items, "count": len(items), "truncated": truncated}
 
 
-@tool(feature="api_water_balance", read_only=True)
+@tool(feature="api_water_balance", read_only=True, project_types={"WS"})
 async def get_water_balance(
     api: TenantApi,
     schema: SchemaName,

@@ -10,13 +10,14 @@ from fastmcp.exceptions import ToolError
 
 from app.mcp.shaping import (
     compact_row,
-    drop_keys,
     failed_text,
     fc_summary,
     feature_rows,
     fields_to_dict,
     list_rows,
     one_row,
+    page_total,
+    shape_feature,
     unwrap,
 )
 
@@ -25,9 +26,9 @@ def test_unwrap_accepted():
     assert unwrap({"status": "Accepted", "body": {"data": {"a": 1}}}) == {"a": 1}
 
 
-def test_unwrap_failed_raises():
-    with pytest.raises(ToolError, match="boom"):
-        unwrap({"status": "Failed", "MSGERR": "boom", "body": {}})
+def test_unwrap_failed_is_extracted_elsewhere():
+    # Failed envelopes are rejected in TenantApi._send, not unwrap.
+    assert unwrap({"status": "Failed", "MSGERR": "boom", "body": {}}) == {}
 
 
 def test_feature_rows_truncates():
@@ -136,8 +137,9 @@ def test_fc_summary_bbox_and_ids():
 
 
 def test_unwrap_failed_message_text():
-    with pytest.raises(ToolError, match="downstream missing"):
-        unwrap({"status": "Failed", "message": {"level": 3, "text": "downstream missing"}, "body": {}})
+    assert failed_text({"status": "Failed", "message": {"level": 3, "text": "downstream missing"}, "body": {}}) == (
+        "downstream missing"
+    )
 
 
 def test_failed_text_from_detail_envelope():
@@ -204,8 +206,63 @@ def test_feature_rows_compact_false_keeps_style():
     assert "label" not in compact["items"][0]
 
 
-def test_drop_keys():
-    assert drop_keys({"a": 1, "stylesheet": {}, "b": 2}, "stylesheet") == {"a": 1, "b": 2}
+def test_shape_feature_summary_flattens_xy():
+    row = {
+        "node_id": 1,
+        "code": "A",
+        "sys_type": "VALVE",
+        "state": 1,
+        "node_type": "VALVE",
+        "dma_id": 2,
+        "coordinates": {"x": 1.0, "y": 2.0, "epsg": 25831},
+    }
+    out = shape_feature(row, "node", "summary")
+    assert out == {
+        "node_id": 1,
+        "code": "A",
+        "sys_type": "VALVE",
+        "state": 1,
+        "node_type": "VALVE",
+        "x": 1.0,
+        "y": 2.0,
+    }
+
+
+def test_shape_feature_id_only():
+    assert shape_feature({"node_id": 1, "code": "A"}, "node", "id") == {"node_id": 1}
+
+
+def test_page_total_uses_last_page():
+    resp = {
+        "status": "Accepted",
+        "body": {"data": {"features": [{}], "pageInfo": {"currentPage": 1, "lastPage": 52}}},
+    }
+    assert page_total(resp) == 52
+
+
+def test_refuse_incompatible_version():
+    from app.mcp.client import refuse_incompatible
+
+    with pytest.raises(ToolError, match="4.15"):
+        refuse_incompatible({"schema": "old", "giswater": "4.15.0", "project_type": "WS"}, None)
+
+
+def test_refuse_incompatible_project_type():
+    from app.mcp.client import refuse_incompatible
+    from app.mcp.registry import ToolSpec
+
+    def list_mincuts():
+        pass
+
+    spec = ToolSpec(fn=list_mincuts, feature=None, annotations={}, project_types=frozenset({"WS"}))
+    with pytest.raises(ToolError, match="WS-only"):
+        refuse_incompatible({"schema": "ud_x", "giswater": "4.17.0", "project_type": "UD"}, spec)
+
+
+def test_refuse_incompatible_accepts_current():
+    from app.mcp.client import refuse_incompatible
+
+    refuse_incompatible({"schema": "ws_x", "giswater": "4.17.0", "project_type": "WS"}, None)
 
 
 def test_failed_text_prefers_msgerr():

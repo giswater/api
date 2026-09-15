@@ -54,7 +54,9 @@ Giswater API exposes a clean HTTP surface to query and operate a Giswater databa
 
 Endpoint: `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/mcp/` (example `https://acme.bgeo360.com/giswater/v1/mcp/`).
 
-Send the same `Authorization` header the tenant `AUTH_MODE` expects (Bearer or Basic). Call `list_schemas` first (no arguments) to get project schemas, types (`WS` / `UD`), and `epsg`. Every other tool requires a `schema` argument. Pick the matching schema or ask the user; do not guess. Coordinates are project CRS (`epsg`), not WGS84 lat/lon.
+Send the same `Authorization` header the tenant `AUTH_MODE` expects (Bearer or Basic). Call `list_schemas` first (no arguments) to get project schemas, types (`WS` / `UD`), and `epsg`. Every other tool requires a `schema` argument. Pick the matching schema or ask the user; do not guess. Coordinates are project CRS, not WGS84 lat/lon. `epsg` is optional and must match the schema EPSG if passed.
+
+`API_*` flag changes require a tenant reload (`POST ${API_ROOT}/admin/tenants/<id>/reload`); tools are bound when the MCP server is built.
 
 <a id="compatibility"></a>
 ## 🔄 Compatibility

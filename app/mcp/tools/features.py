@@ -66,6 +66,14 @@ def _reject_type_filters(feature_type: FeatureType, filters: dict) -> None:
         raise ToolError(f"{', '.join(extra)} not valid for feature_type={feature_type}")
 
 
+async def _reject_gully_on_ws(api: TenantApi, schema: str, feature_type: FeatureType) -> None:
+    if feature_type != "gully":
+        return
+    project_type = ((await api.schema_meta(schema)).get("project_type") or "").upper()
+    if project_type == "WS":
+        raise ToolError(f"gully is UD-only; schema {schema} is WS.")
+
+
 @tool(feature="api_features", read_only=True)
 async def find_features(
     api: TenantApi,
@@ -110,6 +118,7 @@ async def find_features(
     Use ``get_feature`` for one row's attributes. ``fields``: id | summary (default) | full.
     Shared filters (dma_id, sector_id, expl_id) are echoed once at the top level.
     """
+    await _reject_gully_on_ws(api, schema, feature_type)
     limit = clamp_limit(limit)
     typed = {
         "expl_id": expl_id,
@@ -170,6 +179,7 @@ async def get_feature(
     compact: Annotated[bool, Field(description="Drop nulls and QGIS style fields")] = True,
 ) -> dict:
     """Get one feature row by type and id (plain attributes, not a QGIS form)."""
+    await _reject_gully_on_ws(api, schema, feature_type)
     path = f"/features/{_FEATURE_PATH[feature_type]}/{feature_id}"
     return one_row(await api.get(path, schema=schema), compact=compact)
 
@@ -215,7 +225,7 @@ async def get_feature_at_point(
     schema: SchemaName,
     x: Annotated[float, Field(description="X coordinate in the project CRS (not WGS84)")],
     y: Annotated[float, Field(description="Y coordinate in the project CRS (not WGS84)")],
-    epsg: Annotated[int, Field(description="Project EPSG from list_schemas (not 4326)")],
+    epsg: Annotated[int | None, Field(description="Project EPSG; omit to use the schema EPSG")] = None,
     zoom_ratio: Annotated[
         float,
         Field(
@@ -231,6 +241,7 @@ async def get_feature_at_point(
     Resolves id and type at the click, then returns the same compact row as
     ``get_feature``. ``zoom_ratio`` is a snapping radius (default 1000).
     """
+    epsg = await api.resolve_epsg(schema, epsg)
     raw = await api.get(
         "/basic/getinfofromcoordinates",
         schema=schema,
