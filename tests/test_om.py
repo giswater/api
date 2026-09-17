@@ -200,6 +200,55 @@ def _delete_mincut(client, default_params, mincut_id: int):
     assert response.status_code == 200, f"Failed to delete mincut {mincut_id}: {response.text}"
 
 
+def _sample_arc_id(client, default_params) -> int:
+    listing = client.get(api("/features/arcs"), params={**default_params, "limit": 1})
+    assert listing.status_code == 200, listing.text
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
+        pytest.skip("no arcs in sample")
+    return int(features[0]["arc_id"])
+
+
+@pytest.mark.ws
+def test_create_mincut_requires_arc_or_coordinates(client, default_params):
+    assert_ready(client)
+    response = client.post(api("/om/mincuts"), params=default_params, json={"use_psectors": False})
+    assert response.status_code == 422
+
+
+@pytest.mark.ws
+def test_create_mincut_rejects_arc_and_coordinates(client, default_params):
+    assert_ready(client)
+    response = client.post(
+        api("/om/mincuts"),
+        params=default_params,
+        json={"arcId": 1, "coordinates": _MINCUT_COORDINATES, "use_psectors": False},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.ws
+@pytest.mark.destructive
+def test_create_mincut_from_arc_id(client, default_params):
+    assert_ready(client)
+    _ensure_current_user_in_cat_users(default_params["schema"])
+    arc_id = _sample_arc_id(client, default_params)
+    payload = {
+        "arcId": arc_id,
+        "plan": {"mincut_type": "Demo", "anl_cause": "Accidental", "anl_descript": "arcId mincut"},
+        "use_psectors": False,
+    }
+    response = client.post(api("/om/mincuts"), params=default_params, json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "Accepted"
+    mincut_id = data["body"]["data"]["mincutId"]
+    try:
+        assert mincut_id is not None
+    finally:
+        _delete_mincut(client, default_params, mincut_id)
+
+
 # ---------------------------------------------------------------------------
 # Mincut lifecycle test
 # ---------------------------------------------------------------------------

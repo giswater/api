@@ -11,9 +11,9 @@ from fastapi import APIRouter, Body, Path, Query
 
 from app.api.deps import CommonsDep, get_service_context
 from app.schemas.basic.basic_models import GetListResponse
-from app.schemas.common import CoordinatesModel
 from app.schemas.om.mincut_models import (
     MincutCancelResponse,
+    MincutCreateParams,
     MincutCreateResponse,
     MincutDeleteResponse,
     MincutDialogResponse,
@@ -61,22 +61,22 @@ async def get_mincut_dialog(
 @router.post(
     "/mincuts",
     description=(
-        "This action should be used when an anomaly is detected in field that wasn't planified.\n"
-        "In this case there is no mincut created, therefore a new one will be created."
+        "Create an unplanned mincut from an arc id or a map click. Provide exactly one of arcId or coordinates."
     ),
     response_model=MincutCreateResponse,
     response_model_exclude_unset=True,
 )
 async def create_mincut(
     commons: CommonsDep,
-    coordinates: CoordinatesModel = Body(
-        ..., title="Coordinates", description="Coordinates on which the mincut will be created"
-    ),
-    plan: Optional[MincutPlanParams] = Body(None, title="Plan", description="Plan of the mincut"),
-    use_psectors: bool = Body(False, title="Use Psectors", description="Whether to use the planified network or not"),
+    payload: MincutCreateParams,
 ):
     ctx = get_service_context(commons)
-    return await MincutService(ctx).create_mincut(coordinates, plan, use_psectors)
+    return await MincutService(ctx).create_mincut(
+        coordinates=payload.coordinates,
+        arc_id=payload.arcId,
+        plan=payload.plan,
+        use_psectors=payload.use_psectors,
+    )
 
 
 @router.patch(
