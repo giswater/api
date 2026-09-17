@@ -82,7 +82,7 @@ async def list_mincuts(
     raw = await api.get(
         "/om/mincuts",
         schema=schema,
-        params=_filter_fields(mincut_state=state, expl_id=exploitation),
+        params=_filter_fields(state=state, expl_id=exploitation),
     )
     return list_rows(raw, limit=limit)
 
