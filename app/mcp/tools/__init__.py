@@ -6,6 +6,6 @@ or (at your option) any later version.
 """
 
 from app.mcp.registry import REGISTRY
-from app.mcp.tools import crm, discovery, epa, features, mapzones, mincut, network  # noqa: F401
+from app.mcp.tools import crm, discovery, epa, features, mapzones, mincut, network, streets  # noqa: F401
 
 __all__ = ["REGISTRY"]

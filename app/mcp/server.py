@@ -18,7 +18,9 @@ _INSTRUCTIONS = (
     "type (WS or UD), giswater version, and epsg. Every other tool requires a `schema` "
     "argument. Pick the schema matching the user's intent; if it is ambiguous, ask the "
     "user which schema to use. Never guess. Coordinates are in the project CRS, not "
-    "WGS84 lat/lon. `epsg` is optional and must match the schema EPSG if given."
+    "WGS84 lat/lon. `epsg` is optional and must match the schema EPSG if given. "
+    "Street isolation: list_streets → list_street_arcs → create_mincut(arc_id). "
+    "Do not use search() to find pipes on a street."
 )
 
 

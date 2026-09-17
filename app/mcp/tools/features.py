@@ -196,6 +196,7 @@ async def search(
     Hits may be network features, addresses, mincuts, workcats, or other entities.
     ``feature_type`` is set only for ``ve_node`` / ``ve_arc`` / ``ve_connec`` /
     ``ve_gully`` / ``ve_link`` rows; only those can be passed to ``get_feature``.
+    For pipes on a named street use ``list_streets`` then ``list_street_arcs``.
     """
     limit = clamp_limit(limit)
     raw = await api.get("/basic/getsearch", schema=schema, params={"searchText": text})

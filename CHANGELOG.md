@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP `get_feature_at_point`**: identify the feature at project-CRS coordinates via `GET /basic/getinfofromcoordinates`.
 - **`GET ${API_ROOT}/v1/streets`** and **`GET ${API_ROOT}/v1/streets/{id}/arcs`**: street-axis search and candidate arcs (`streetaxis_id` union spatial buffer). Gated by `API_BASIC`.
 - **`POST ${API_ROOT}/v1/om/mincuts`**: create from `arcId` or `coordinates` (exactly one).
+- **MCP `list_streets` / `list_street_arcs`**, and **`create_mincut(arc_id)`** XOR coordinates.
 
 ### Changed
 

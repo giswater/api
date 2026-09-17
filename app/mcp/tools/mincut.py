@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
+from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from app.mcp.client import TenantApi
@@ -115,8 +116,11 @@ async def list_mincut_valves(
 async def create_mincut(
     api: TenantApi,
     schema: SchemaName,
-    x: Annotated[float, Field(description="X coordinate in the project CRS (not WGS84)")],
-    y: Annotated[float, Field(description="Y coordinate in the project CRS (not WGS84)")],
+    x: Annotated[float | None, Field(description="X coordinate in the project CRS (not WGS84)")] = None,
+    y: Annotated[float | None, Field(description="Y coordinate in the project CRS (not WGS84)")] = None,
+    arc_id: Annotated[
+        int | None, Field(description="Arc id from list_street_arcs. Mutually exclusive with x/y.")
+    ] = None,
     epsg: Annotated[int | None, Field(description="Project EPSG; omit to use the schema EPSG")] = None,
     mincut_type: Annotated[Literal["Demo", "Test", "Real"], Field(description="Mincut type")] = "Demo",
     anl_cause: Annotated[Literal["Accidental", "Planified"], Field(description="Cause")] = "Accidental",
@@ -125,23 +129,29 @@ async def create_mincut(
         float,
         Field(
             description=(
-                "Snapping radius in CRS units. Determines which feature wins: "
+                "Snapping radius in CRS units when using x/y. Determines which feature wins: "
                 "Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
             )
         ),
     ] = 1000,
 ) -> dict:
-    """Create an unplanned mincut at project-CRS coordinates (not WGS84). Not idempotent — retrying creates a duplicate."""
-    epsg = await api.resolve_epsg(schema, epsg)
-    body = {
-        "coordinates": {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio},
-        "plan": {
-            "mincut_type": mincut_type,
-            "anl_cause": anl_cause,
-            "anl_descript": anl_descript,
-        },
-        "use_psectors": False,
-    }
+    """Create an unplanned mincut from an arc_id or project-CRS coordinates. Not idempotent — retrying creates a duplicate."""
+    has_arc = arc_id is not None
+    has_any_xy = x is not None or y is not None
+    if has_arc and has_any_xy:
+        raise ToolError("Provide arc_id or both x and y, not both")
+    if not has_arc and not (x is not None and y is not None):
+        raise ToolError("Provide arc_id or both x and y")
+    plan = {"mincut_type": mincut_type, "anl_cause": anl_cause, "anl_descript": anl_descript}
+    if has_arc:
+        body = {"arcId": arc_id, "plan": plan, "use_psectors": False}
+    else:
+        epsg = await api.resolve_epsg(schema, epsg)
+        body = {
+            "coordinates": {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio},
+            "plan": plan,
+            "use_psectors": False,
+        }
     raw = await api.post("/om/mincuts", schema=schema, json=body)
     return _summarise_mincut(unwrap(raw), include_geometry=False)
 

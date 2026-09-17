@@ -301,6 +301,8 @@ _EXPECTED_TOOLS = {
     "get_feature",
     "search",
     "get_feature_at_point",
+    "list_streets",
+    "list_street_arcs",
     "list_mapzones",
     "get_dma_contents",
     "get_water_balance",
@@ -325,6 +327,8 @@ _READ_ONLY = {
     "get_feature",
     "search",
     "get_feature_at_point",
+    "list_streets",
+    "list_street_arcs",
     "list_mapzones",
     "get_dma_contents",
     "get_water_balance",
@@ -374,6 +378,41 @@ def test_mcp_bind_hides_api_from_schema():
     assert "api" not in inspect.signature(bound).parameters
     assert "schema" in inspect.signature(bound).parameters
     assert "feature_type" in inspect.signature(bound).parameters
+
+
+def test_mcp_create_mincut_xor_schema():
+    from app.mcp.registry import REGISTRY
+
+    spec = next(s for s in REGISTRY if s.fn.__name__ == "create_mincut")
+    params = inspect.signature(spec.bind(object())).parameters
+    assert params["arc_id"].default is not inspect.Parameter.empty
+    assert params["x"].default is not inspect.Parameter.empty
+    assert params["y"].default is not inspect.Parameter.empty
+
+
+def test_mcp_list_streets(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(client, "list_streets", {"schema": default_params["schema"], "q": "ca", "limit": 5})
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(body))
+    data = _tool_data(body)
+    items = data.get("items") or []
+    if not items:
+        pytest.skip("no streets")
+    assert "id" in items[0]
+    street_id = items[0]["id"]
+    arcs_resp, arcs_body = _call_tool(
+        client,
+        "list_street_arcs",
+        {"schema": default_params["schema"], "street_id": street_id, "limit": 5},
+    )
+    assert arcs_resp.status_code == 200, arcs_resp.text
+    arcs_result = arcs_body.get("result") or {}
+    assert arcs_result.get("isError") in (None, False)
+    arcs = _tool_data(arcs_body)
+    assert "items" in arcs
 
 
 def test_mcp_find_features_compact(client, default_params):
