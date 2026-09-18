@@ -76,7 +76,23 @@ class MincutExecParams(BaseModel):
     )
 
 
-class MincutCreateParams(BaseModel):
+class MincutPsectorsParams(BaseModel):
+    use_psectors: bool = Field(False, title="Use Psectors", description="Whether to use the planified network or not")
+
+
+class MincutToggleParams(MincutPsectorsParams):
+    """Toggle body. A bare boolean is the pre-object contract and is still accepted."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_legacy_use_psectors(cls, data: Any) -> Any:
+        # DEPRECATED: prefer {"use_psectors": false}. Scalar boolean body still accepted.
+        if isinstance(data, bool):
+            return {"use_psectors": data}
+        return data
+
+
+class MincutCreateParams(MincutPsectorsParams):
     """Create an unplanned mincut from an arc id or a map click. Exactly one target."""
 
     arcId: Optional[int] = Field(None, description="Arc id. Mutually exclusive with coordinates.", examples=[132])
@@ -84,13 +100,31 @@ class MincutCreateParams(BaseModel):
         None, title="Coordinates", description="Click point. Mutually exclusive with arcId."
     )
     plan: Optional[MincutPlanParams] = Field(None, title="Plan", description="Plan of the mincut")
-    use_psectors: bool = Field(False, title="Use Psectors", description="Whether to use the planified network or not")
 
     @model_validator(mode="after")
     def xor_target(self) -> Self:
         if (self.arcId is None) == (self.coordinates is None):
             raise ValueError("Provide exactly one of arcId or coordinates")
         return self
+
+
+class MincutUpdateParams(MincutPsectorsParams):
+    plan: Optional[MincutPlanParams] = Field(None, title="Plan", description="Plan parameters")
+    exec: Optional[MincutExecParams] = Field(None, title="Execution", description="Execution parameters")
+
+
+class MincutStartParams(MincutPsectorsParams):
+    plan: Optional[MincutPlanParams] = Field(None, title="Plan", description="Plan parameters")
+
+
+class MincutEndParams(MincutPsectorsParams):
+    shutoff_required: Optional[bool] = Field(
+        True,
+        title="Shutoff Required",
+        description="Whether the mincut required shutting off the water supply to consumers",
+        examples=[True],
+    )
+    exec: Optional[MincutExecParams] = Field(None, title="Execution", description="Execution parameters")
 
 
 # endregion

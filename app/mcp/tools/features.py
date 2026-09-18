@@ -74,6 +74,57 @@ async def _reject_gully_on_ws(api: TenantApi, schema: str, feature_type: Feature
         raise ToolError(f"gully is UD-only; schema {schema} is WS.")
 
 
+def _search_hit(*, section: str, table: str, feature_type: str | None, id_: object, label: object) -> dict:
+    return {
+        "section": section,
+        "table": table,
+        "feature_type": feature_type,
+        "id": id_,
+        "label": label,
+    }
+
+
+async def _code_lookups(api: TenantApi, schema: str, text: str) -> list[dict]:
+    """Exact hydrometer-code and connec customer_code hits. getsearch indexes neither.
+
+    Probe errors are swallowed so a missing CRM/features route cannot break search().
+    """
+    extras: list[dict] = []
+    try:
+        raw = await api.get("/crm/hydrometers", schema=schema, params={"code": text, "limit": 1})
+        for row in unwrap(raw).get("hydrometers") or []:
+            if not isinstance(row, dict):
+                continue
+            code = row.get("code")
+            if code is None:
+                continue
+            extras.append(
+                _search_hit(section="hydrometer", table="v_hydrometer", feature_type=None, id_=code, label=code)
+            )
+    except Exception:
+        pass
+    try:
+        raw = await api.get("/features/connecs", schema=schema, params={"customer_code": text, "limit": 20})
+        for row in unwrap(raw).get("features") or []:
+            if not isinstance(row, dict):
+                continue
+            connec_id = row.get("connec_id")
+            if connec_id is None:
+                continue
+            extras.append(
+                _search_hit(
+                    section="connec",
+                    table="ve_connec",
+                    feature_type="connec",
+                    id_=connec_id,
+                    label=row.get("customer_code") or connec_id,
+                )
+            )
+    except Exception:
+        pass
+    return extras
+
+
 @tool(feature="api_features", read_only=True)
 async def find_features(
     api: TenantApi,
@@ -194,8 +245,11 @@ async def search(
     """Free-text search across whatever the project configured as searchable.
 
     Hits may be network features, addresses, mincuts, workcats, or other entities.
-    ``feature_type`` is set only for ``ve_node`` / ``ve_arc`` / ``ve_connec`` /
-    ``ve_gully`` / ``ve_link`` rows; only those can be passed to ``get_feature``.
+    Hydrometer codes and connec customer codes are matched exactly when ``text``
+    has no whitespace (getsearch does not index them). Follow hydrometer hits
+    with ``list_hydrometers(code=)``. ``feature_type`` is set only for
+    ``ve_node`` / ``ve_arc`` / ``ve_connec`` / ``ve_gully`` / ``ve_link`` rows;
+    only those can be passed to ``get_feature``.
     For pipes on a named street use ``list_streets`` then ``list_street_arcs``.
     """
     limit = clamp_limit(limit)
@@ -215,6 +269,11 @@ async def search(
                     "label": value.get("displayName") or value.get("value"),
                 }
             )
+    # Address-like strings skip the extra lookups; codes like H-12345 do not.
+    if text and not any(ch.isspace() for ch in text):
+        extras = await _code_lookups(api, schema, text)
+        seen = {(item.get("table"), item.get("id")) for item in extras}
+        items = extras + [item for item in items if (item.get("table"), item.get("id")) not in seen]
     truncated = len(items) > limit
     items = items[:limit]
     return {"items": items, "count": len(items), "truncated": truncated}

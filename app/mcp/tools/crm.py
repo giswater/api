@@ -30,13 +30,24 @@ async def list_hydrometers(
     code: Annotated[str | None, Field(description="Filter by hydrometer code")] = None,
     connec_id: Annotated[int | None, Field(description="Filter by connec id")] = None,
     dma_id: Annotated[int | None, Field(description="Filter by DMA id")] = None,
+    mincut_id: Annotated[int | None, Field(description="Filter by mincut id (affected hydrometers)")] = None,
+    customer_code: Annotated[str | None, Field(description="Filter by connec customer code")] = None,
     limit: Annotated[int, Field(description="Max rows requested from the API (1–500)")] = DENSE_LIMIT,
     compact: Annotated[bool, Field(description="Drop nulls and QGIS style fields")] = True,
 ) -> dict:
-    """List hydrometers, optionally filtered by code, connec_id or dma_id."""
+    """List hydrometers, optionally filtered by code, connec_id, dma_id, mincut_id or customer_code."""
     limit = clamp_limit(limit)
     params = {
-        k: v for k, v in {"code": code, "connecId": connec_id, "dmaId": dma_id, "limit": limit}.items() if v is not None
+        k: v
+        for k, v in {
+            "code": code,
+            "connecId": connec_id,
+            "dmaId": dma_id,
+            "mincutId": mincut_id,
+            "customerCode": customer_code,
+            "limit": limit,
+        }.items()
+        if v is not None
     }
     raw = await api.get("/crm/hydrometers", schema=schema, params=params)
     data = unwrap(raw)
@@ -60,9 +71,11 @@ async def manage_hydrometers(
 ) -> dict:
     """Create, update or delete hydrometers.
 
-    Each item needs ``code``. Field names match REST: hydroNumber, connecId, stateId,
-    catalogId, categoryId, priorityId, exploitation, startDate, endDate, updateDate,
-    shutdownDate, link. Unknown fields are rejected. delete uses ``code`` only.
+    Each item needs ``code``. Field names match REST: hydroNumber, customerCode,
+    stateId, catalogId, categoryId, priorityId, exploitation, startDate, endDate,
+    updateDate, shutdownDate, link.
+    ``connecId`` is deprecated (resolved to the connec's customer_code).
+    Unknown fields are rejected. delete uses ``code`` only.
     Full-table replace is not available.
     """
     if not hydrometers:

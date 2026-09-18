@@ -246,6 +246,9 @@ def test_mcp_get_mincut_budget(client, default_params):
     mincut_id = fields[0].get("id") or fields[0].get("mincut_id")
     resp, body = _call_tool(client, "get_mincut", {"schema": default_params["schema"], "mincut_id": int(mincut_id)})
     assert resp.status_code == 200, resp.text
+    data = _tool_data(body)
+    assert "mincut_id" in data
+    assert "hydrometers" not in data
     assert len(json.dumps(body)) < 80_000
 
 
@@ -765,6 +768,51 @@ def test_mcp_search_feature_type(client, default_params):
             assert item.get("feature_type") == known[table]
         else:
             assert item.get("feature_type") is None
+
+
+@pytest.mark.ws
+def test_mcp_search_hydrometer_code(client, default_params):
+    assert_ready(client)
+    listed = client.get(api("/crm/hydrometers"), params={**default_params, "limit": 1})
+    if listed.status_code != 200:
+        pytest.skip(listed.text)
+    rows = ((listed.json().get("body") or {}).get("data") or {}).get("hydrometers") or []
+    code = next((row.get("code") for row in rows if isinstance(row, dict) and row.get("code")), None)
+    if not code or any(ch.isspace() for ch in str(code)):
+        pytest.skip("no hydrometer code")
+    resp, body = _call_tool(client, "search", {"schema": default_params["schema"], "text": str(code)})
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") in (None, False), json.dumps(body)
+    items = _tool_data(body).get("items") or []
+    assert any(item.get("table") == "v_hydrometer" and str(item.get("id")) == str(code) for item in items)
+
+
+@pytest.mark.ws
+def test_mcp_search_customer_code(client, default_params):
+    assert_ready(client)
+    listed = client.get(api("/features/connecs"), params={**default_params, "limit": 50})
+    if listed.status_code != 200:
+        pytest.skip(listed.text)
+    features = ((listed.json().get("body") or {}).get("data") or {}).get("features") or []
+    customer_code = next(
+        (
+            row.get("customer_code")
+            for row in features
+            if isinstance(row, dict)
+            and row.get("customer_code")
+            and not any(ch.isspace() for ch in str(row["customer_code"]))
+        ),
+        None,
+    )
+    if not customer_code:
+        pytest.skip("no connec customer_code")
+    resp, body = _call_tool(client, "search", {"schema": default_params["schema"], "text": str(customer_code)})
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") in (None, False), json.dumps(body)
+    items = _tool_data(body).get("items") or []
+    assert any(item.get("table") == "ve_connec" and item.get("feature_type") == "connec" for item in items)
 
 
 def test_mcp_ws_only_tools_declare_restriction():

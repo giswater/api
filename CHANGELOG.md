@@ -11,23 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Curated MCP server** at `${API_ROOT}/v1/mcp/` (Streamable HTTP). One FastMCP instance per tenant, task-shaped tools over the REST API, gated by process `MCP_ENABLED` and per-tenant `API_MCP`.
 - **`GET ${API_ROOT}/v1/schemas`**: list Giswater project schemas (`sys_version`) with `project_type`, version, and optional `epsg`.
-- **`GET ${API_ROOT}/v1/crm/hydrometers`**: read hydrometers (`code` / `connecId` / `dmaId` / `limit`).
+- **`GET ${API_ROOT}/v1/crm/hydrometers`**: read hydrometers (`code` / `connecId` / `dmaId` / `mincutId` / `customerCode` / `limit`).
 - **`/features` endpoints**: typed filters for nodes/arcs/links/connecs/gullies (list + GeoJSON collection + by-id fields, form, and GeoJSON Feature), gated by `API_FEATURES`.
 - **MCP `get_feature_at_point`**: identify the feature at project-CRS coordinates via `GET /basic/getinfofromcoordinates`.
 - **`GET ${API_ROOT}/v1/streets`** and **`GET ${API_ROOT}/v1/streets/{id}/arcs`**: street-axis search and candidate arcs (`streetaxis_id` union spatial buffer). Gated by `API_BASIC`.
 - **`POST ${API_ROOT}/v1/om/mincuts`**: create from `arcId` or `coordinates` (exactly one).
 - **MCP `list_streets` / `list_street_arcs`**, and **`create_mincut(arc_id)`** XOR coordinates.
+- **MCP `search()`**: exact hydrometer-code and connec `customer_code` lookups when the query has no whitespace.
 
 ### Changed
 
 - **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.0** (refactored `gw_fct_getfeatures` with `featureType` / `outputFormat`). Compatibility table: **1.7.x → Giswater DB ≥ 4.17.0**.
 - **`gw_fct_getprofilevalues` extras key** `midNodes` → `midFeatures` (`app/services/om/profile_service.py`).
 - **Profile arc `omunit_id`** is optional (widen). Rows that omit it no longer 500.
+- **`GET ${API_ROOT}/v1/crm/hydrometers`**: always joins `vf_hydrometer` / `ve_connec`; rows expose `connec_id`, `dma_id`, `customer_code`.
+- **Hydrometer writes** map REST camelCase to `gw_fct_set_hydrometers` keys (`hydro_number`, `feature_customer_code`, `state_id`, …). `customerCode` is the CRM link; `connecId` is resolved to `ve_connec.customer_code`.
+- **Mincut action bodies** (`PATCH /om/mincuts/{id}`, `POST .../start`, `end`) take a JSON object (`Mincut*Params`). Toggle routes accept that object too; a bare boolean body is still accepted.
 
 ### Deprecated
 
 - **`GET /om/dmas/{dma_id}/connecs`**: prefer `GET /features/connecs?dma_id={dma_id}`.
 - **`middle_nodes`** on `POST /om/profiles` (`DEPRECATED #37`; removal in **2.0.0**). Use `middle_features`. If both are sent, `middle_features` wins.
+- **Hydrometer `connecId` on write**: prefer `customerCode`. `connecId` is still resolved to the connec's `customer_code`.
+- **Bare boolean body** on `POST /om/mincuts/{id}/valves/{valve_id}/toggle-unaccess` and `toggle-status`. Prefer `{"use_psectors": false}`. Scalar `true`/`false` is still accepted.
+
+### Fixed
+
+- **`POST /om/mincuts/{id}/valves/{valve_id}/toggle-unaccess`** and **`toggle-status`**: object body `{"use_psectors": false}` no longer 422s.
 
 ## [1.7.0] - 2026-08-05
 

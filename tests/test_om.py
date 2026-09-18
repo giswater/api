@@ -10,8 +10,16 @@ import asyncio
 import pytest
 from psycopg import sql
 
+from app.schemas.om.mincut_models import MincutToggleParams
 from app.tenancy import state
 from tests.helpers import assert_ready, api
+
+
+def test_toggle_body_accepts_legacy_boolean():
+    assert MincutToggleParams.model_validate(False).use_psectors is False
+    assert MincutToggleParams.model_validate(True).use_psectors is True
+    assert MincutToggleParams.model_validate({"use_psectors": True}).use_psectors is True
+    assert MincutToggleParams.model_validate({}).use_psectors is False
 
 
 @pytest.mark.ws
@@ -370,6 +378,27 @@ def test_valve_toggle_status(client, default_params):
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "Accepted"
+    finally:
+        _delete_mincut(client, default_params, mincut_id)
+
+
+@pytest.mark.ws
+@pytest.mark.destructive
+def test_valve_toggle_accepts_legacy_boolean_body(client, default_params):
+    """Scalar boolean body (pre-object contract) must not 422."""
+    assert_ready(client)
+
+    mincut_id = _create_mincut(client, default_params)
+    try:
+        response = client.get(api(f"/om/mincuts/{mincut_id}/valves"), params=default_params)
+        assert response.status_code == 200
+        features = response.json().get("body", {}).get("data", {}).get("features", [])
+        valve_id = features[0]["node_id"] if features else 1
+        path = api(f"/om/mincuts/{mincut_id}/valves/{valve_id}/toggle-unaccess")
+        scalar = client.post(path, params=default_params, json=False)
+        assert scalar.status_code != 422, scalar.text
+        obj = client.post(path, params=default_params, json={"use_psectors": False})
+        assert obj.status_code != 422, obj.text
     finally:
         _delete_mincut(client, default_params, mincut_id)
 
