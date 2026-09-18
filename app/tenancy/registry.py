@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi_keycloak import FastAPIKeycloak
 
@@ -44,6 +44,8 @@ class Tenant:
     api_logger: logging.Logger
     api_log_date: str
     log_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    mcp: Any = None
+    mcp_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def ensure_logger_fresh(self) -> None:
         """Refresh the per-tenant file logger when the day rolls over."""
@@ -100,6 +102,7 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("API_CRM", settings.api_crm),
         ("API_EPA", settings.api_epa),
         ("API_FEATURES", settings.api_features),
+        ("API_MCP", settings.api_mcp),
         ("DB_HOST", settings.db_host),
         ("DB_PORT", settings.db_port),
         ("DB_NAME", settings.db_name),
@@ -318,15 +321,19 @@ class TenantRegistry:
 
     async def close_all(self) -> None:
         async with self._lock:
-            for tid, tenant in list(self._tenants.items()):
-                try:
-                    await tenant.db_manager.close()
-                except Exception as exc:
-                    logger.warning("[%s] close failed: %s", tid, exc)
+            for tenant in list(self._tenants.values()):
+                await self._safe_close(tenant)
             self._tenants.clear()
 
     @staticmethod
     async def _safe_close(tenant: Tenant) -> None:
+        mcp = getattr(tenant, "mcp", None)
+        if mcp is not None:
+            try:
+                await mcp.aclose()
+            except Exception as exc:
+                logger.warning("[%s] mcp close failed: %s", tenant.id, exc)
+            tenant.mcp = None
         try:
             await tenant.db_manager.close()
         except Exception as exc:

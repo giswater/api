@@ -63,6 +63,13 @@ app/
     host_middleware.py    # Host header -> tenant resolution
   middleware/
     request_logging.py    # HTTP request logging middleware
+  mcp/                    # curated MCP server (per-tenant FastMCP, loopback TenantApi)
+    client.py             # in-process httpx ASGI client + auth forwarding
+    registry.py           # @tool decorator
+    runtime.py            # TenantMcp lifespan + /mcp dispatcher
+    server.py             # build_tenant_mcp
+    shaping.py            # envelope unwrap / row / FeatureCollection helpers
+    tools/                # one module per domain
   schemas/                # Pydantic request/response models (basic/ crm/ om/ routing/ epa/, admin.py, common.py)
   utils/                  # dependency-light helpers (no DB imports)
     body.py               # create_body_dict, create_api_response, handle_procedure_result

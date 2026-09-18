@@ -75,6 +75,52 @@ class SystemService:
             raise LookupError(f"Schema '{schema}' not found")
         return {"status": "Accepted", "message": f"Schema '{schema}' is valid"}
 
+    async def list_schemas(self) -> dict:
+        """Return Giswater project schemas (those with sys_version) and their type/version."""
+        db_manager = self.tenant.db_manager
+        async with db_manager.get_db() as conn:
+            if conn is None:
+                raise DatabaseUnavailableError()
+            try:
+                async with conn.cursor(row_factory=dict_row) as cursor:
+                    await cursor.execute(
+                        """
+                        SELECT n.nspname
+                        FROM pg_namespace n
+                        WHERE n.nspname NOT LIKE 'pg\\_%'
+                          AND n.nspname <> 'information_schema'
+                          AND has_schema_privilege(n.oid, 'USAGE')
+                          AND EXISTS (
+                              SELECT 1 FROM pg_class c
+                              WHERE c.relnamespace = n.oid AND c.relname = 'sys_version'
+                          )
+                        ORDER BY n.nspname
+                        """
+                    )
+                    names = [row["nspname"] for row in await cursor.fetchall()]
+                    items: list[dict] = []
+                    for name in names:
+                        query = sql.SQL("SELECT * FROM {}.sys_version ORDER BY id DESC LIMIT 1").format(
+                            sql.Identifier(name)
+                        )
+                        await cursor.execute(query)
+                        row = await cursor.fetchone()
+                        if not row:
+                            continue
+                        items.append(
+                            {
+                                "schema": name,
+                                "project_type": row.get("project_type") or row.get("project"),
+                                "giswater": row.get("giswater"),
+                                "epsg": row.get("epsg"),
+                            }
+                        )
+                await conn.commit()
+            except psycopg.Error as exc:
+                await conn.rollback()
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"schemas": items}
+
     @staticmethod
     def _manage_where_clauses(where_clauses: list, params: list, from_, to, endpoint, method, status, user):
         if from_:

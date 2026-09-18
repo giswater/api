@@ -264,6 +264,23 @@ class BaseAPIResponse(BaseModel, Generic[T]):
     body: T = Field(..., description="Body of the response")
 
 
+class SchemaInfo(BaseModel):
+    """One Giswater project schema discovered in the tenant database."""
+
+    model_config = {"populate_by_name": True}
+
+    schema_name: str = Field(..., alias="schema", description="Schema name")
+    project_type: Optional[str] = Field(None, description="WS or UD (from sys_version)")
+    giswater: Optional[str] = Field(None, description="Giswater version string")
+    epsg: Optional[int] = Field(None, description="Project EPSG code from sys_version")
+
+
+class SchemasResponse(BaseModel):
+    """List of Giswater project schemas on the current tenant."""
+
+    schemas: List[SchemaInfo] = Field(default_factory=list, description="Discovered schemas")
+
+
 class GwErrorResponse(BaseModel):
     """Gw error response model"""
 

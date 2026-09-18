@@ -43,16 +43,30 @@ def _materialize_tenants_dir() -> str:
     )
     # DB_SCHEMA is intentionally NOT written here; tests pass it as the
     # `?schema=` query param via the `default_params` fixture.
-    (tmp / "test.env").write_text(
-        "API_BASIC=true\nAPI_PROFILE=true\nAPI_FLOW=true\nAPI_MINCUT=true\n"
-        "API_WATER_BALANCE=true\nAPI_MAPZONES=true\nAPI_ROUTING=true\n"
-        "API_CRM=true\nAPI_EPA=true\nAPI_FEATURES=true\n"
+    common_db = (
         f"DB_HOST={db_host}\nDB_PORT={db_port}\nDB_NAME={db_name}\n"
         f"DB_USER={db_user}\nDB_PASSWORD={db_password}\nDB_SCHEMA=public\n"
         f'DATABASE_URL="{db_url}"\n'
         "DB_POOL_MIN_SIZE=1\nDB_POOL_MAX_SIZE=5\nDB_POOL_TIMEOUT=10\n"
         "DB_POOL_MAX_WAITING=0\nDB_POOL_MAX_IDLE=60\nDB_CONNECT_TIMEOUT=5\n"
-        "AUTH_MODE=none\n"
+    )
+    flags_all = (
+        "API_BASIC=true\nAPI_PROFILE=true\nAPI_FLOW=true\nAPI_MINCUT=true\n"
+        "API_WATER_BALANCE=true\nAPI_MAPZONES=true\nAPI_ROUTING=true\n"
+        "API_CRM=true\nAPI_EPA=true\nAPI_FEATURES=true\n"
+    )
+    (tmp / "test.env").write_text(flags_all + "API_MCP=true\n" + common_db + "AUTH_MODE=none\n")
+    (tmp / "isolated.env").write_text(
+        flags_all.replace("API_CRM=true", "API_CRM=false") + "API_MCP=true\n" + common_db + "AUTH_MODE=none\n"
+    )
+    (tmp / "nomcp.env").write_text(flags_all + "API_MCP=false\n" + common_db + "AUTH_MODE=none\n")
+    (tmp / "authed.env").write_text(
+        flags_all
+        + "API_MCP=true\n"
+        + common_db
+        + "AUTH_MODE=basic\n"
+        + f"AUTH_BASIC_BOOTSTRAP_USER={db_user}\n"
+        + "AUTH_BASIC_BOOTSTRAP_PASSWORD=smokepass99\n"
     )
     return str(tmp)
 
