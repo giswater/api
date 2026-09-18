@@ -39,39 +39,47 @@ async def list_dscenario_objects(
     return list_rows(raw, limit=clamp_limit(limit))
 
 
-@tool(feature="api_epa", destructive=True)
-async def manage_dscenario(
+@tool(feature="api_epa")
+async def create_dscenario(
     api: TenantApi,
     schema: SchemaName,
-    action: Annotated[Literal["create", "select", "delete"], Field(description="create / select / delete")],
-    dscenario_id: Annotated[int | None, Field(description="Required for select and delete")] = None,
-    name: Annotated[str | None, Field(description="Required for create")] = None,
-    dscenario_type: Annotated[
-        DscenarioType | None, Field(description="Required for create (DEMAND, VALVE, PIPE, …)")
-    ] = None,
-    descript: Annotated[str | None, Field(description="Optional description on create")] = None,
-    expl: Annotated[int, Field(description="Exploitation id on create")] = 0,
-    active: Annotated[bool, Field(description="Active flag on create")] = True,
+    name: Annotated[str, Field(description="Dscenario name")],
+    dscenario_type: Annotated[DscenarioType, Field(description="DEMAND, VALVE, PIPE, …")],
+    descript: Annotated[str | None, Field(description="Optional description")] = None,
+    expl: Annotated[int, Field(description="Exploitation id")] = 0,
+    active: Annotated[bool, Field(description="Active flag")] = True,
 ) -> dict:
-    """Create, select or delete an EPA dscenario.
+    """Create an EPA dscenario. Not idempotent — retrying creates a duplicate."""
+    raw = await api.post(
+        "/epa/dscenarios",
+        schema=schema,
+        json={"name": name, "type": dscenario_type, "descript": descript, "expl": expl, "active": active},
+    )
+    # POST /epa/dscenarios is response_model=dict and may skip the Giswater envelope.
+    return unwrap(raw) if isinstance(raw.get("body"), dict) else raw
 
-    create requires name and dscenario_type. select and delete require dscenario_id.
-    select sets the current user's selected dscenario (session selector, not a DB update of the row).
+
+@tool(feature="api_epa")
+async def select_dscenario(
+    api: TenantApi,
+    schema: SchemaName,
+    dscenario_id: Annotated[int, Field(description="Dscenario id")],
+) -> dict:
+    """Set the current user's selected dscenario (session selector, not a row update).
+
+    Writes ``selector_inp_dscenario`` for ``CURRENT_USER``. If the MCP DB role is
+    the same as a QGIS session, this clobbers that user's selected dscenario.
     """
-    if action == "create":
-        if not name or not dscenario_type:
-            raise ToolError("create requires name and dscenario_type")
-        raw = await api.post(
-            "/epa/dscenarios",
-            schema=schema,
-            json={"name": name, "type": dscenario_type, "descript": descript, "expl": expl, "active": active},
-        )
-        # POST /epa/dscenarios is response_model=dict and may skip the Giswater envelope.
-        return unwrap(raw) if isinstance(raw.get("body"), dict) else raw
-    if dscenario_id is None:
-        raise ToolError("select/delete require dscenario_id")
-    if action == "select":
-        return unwrap(await api.post(f"/epa/dscenarios/{dscenario_id}/select", schema=schema, json={}))
+    return unwrap(await api.post(f"/epa/dscenarios/{dscenario_id}/select", schema=schema, json={}))
+
+
+@tool(feature="api_epa", destructive=True)
+async def delete_dscenario(
+    api: TenantApi,
+    schema: SchemaName,
+    dscenario_id: Annotated[int, Field(description="Dscenario id")],
+) -> dict:
+    """Permanently delete an EPA dscenario."""
     return unwrap(await api.delete(f"/epa/dscenarios/{dscenario_id}", schema=schema))
 
 

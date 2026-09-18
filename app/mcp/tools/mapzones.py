@@ -130,12 +130,12 @@ async def get_dma_contents(
 
 
 @tool(feature="api_water_balance", read_only=True, project_types={"WS"})
-async def get_water_balance(
+async def list_dma_boundary_nodes(
     api: TenantApi,
     schema: SchemaName,
     dma_ids: Annotated[list[int] | None, Field(description="Optional DMA ids to filter")] = None,
 ) -> dict:
-    """DMA boundary flow signs (in/out). Geometry is stripped; not volumetric KPIs."""
+    """DMA-boundary nodes and flow_sign (in/out). Not NRW or volumetric water balance."""
     params = {"dma_id": dma_ids} if dma_ids else None
     raw = await api.get("/om/waterbalance", schema=schema, params=params)
     data = unwrap(raw)

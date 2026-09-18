@@ -5,22 +5,13 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from typing import Annotated, Literal
-from urllib.parse import quote
+from typing import Annotated
 
-from fastmcp.exceptions import ToolError
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DENSE_LIMIT, SchemaName, clamp_limit, tool
 from app.mcp.shaping import compact_row, unwrap
-from app.schemas.crm.crm_models import HydrometerCreate
-
-
-class HydrometerItem(HydrometerCreate):
-    """One hydrometer row. Field names match REST (camelCase). Unknown fields are rejected."""
-
-    model_config = ConfigDict(extra="forbid")
 
 
 @tool(feature="api_crm", read_only=True)
@@ -60,35 +51,3 @@ async def list_hydrometers(
     if isinstance(total, int) and total > len(items):
         truncated = True
     return {"items": items, "count": total if isinstance(total, int) else len(items), "truncated": truncated}
-
-
-@tool(feature="api_crm", destructive=True)
-async def manage_hydrometers(
-    api: TenantApi,
-    schema: SchemaName,
-    action: Annotated[Literal["create", "update", "delete"], Field(description="create / update / delete")],
-    hydrometers: Annotated[list[HydrometerItem], Field(description="Rows; each must include code")],
-) -> dict:
-    """Create, update or delete hydrometers.
-
-    Each item needs ``code``. Field names match REST: hydroNumber, customerCode,
-    stateId, catalogId, categoryId, priorityId, exploitation, startDate, endDate,
-    updateDate, shutdownDate, link.
-    ``connecId`` is deprecated (resolved to the connec's customer_code).
-    Unknown fields are rejected. delete uses ``code`` only.
-    Full-table replace is not available.
-    """
-    if not hydrometers:
-        raise ToolError("hydrometers must be a non-empty list")
-    payload = [item.model_dump(exclude_none=True) for item in hydrometers]
-    if action == "create":
-        raw = await api.post("/crm/hydrometers", schema=schema, json=payload)
-    elif action == "update":
-        raw = await api.patch("/crm/hydrometers", schema=schema, json=payload)
-    else:
-        codes = [item.code for item in hydrometers]
-        if len(codes) == 1:
-            raw = await api.delete(f"/crm/hydrometers/{quote(codes[0], safe='')}", schema=schema)
-        else:
-            raw = await api.delete("/crm/hydrometers", schema=schema, json=codes)
-    return unwrap(raw)

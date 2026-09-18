@@ -180,7 +180,6 @@ def test_mcp_isolation_no_crm_leak(client):
     names_b = _tool_names(client, host="isolated.bgeo360.com")
     assert "list_hydrometers" in names_a
     assert "list_hydrometers" not in names_b
-    assert "manage_hydrometers" not in names_b
     init_a, _ = _initialize(client, host="test.bgeo360.com")
     session_a = init_a.headers.get("mcp-session-id")
     extra = {"mcp-session-id": session_a} if session_a else {"mcp-session-id": "from-tenant-a"}
@@ -254,7 +253,7 @@ def test_mcp_get_mincut_budget(client, default_params):
 
 def test_mcp_water_balance_budget(client, default_params):
     assert_ready(client)
-    resp, body = _call_tool(client, "get_water_balance", {"schema": default_params["schema"]})
+    resp, body = _call_tool(client, "list_dma_boundary_nodes", {"schema": default_params["schema"]})
     if resp.status_code != 200:
         pytest.skip(resp.text)
     assert len(json.dumps(body)) < 80_000
@@ -295,10 +294,11 @@ def test_mcp_find_features_gully(client, default_params):
 _EXPECTED_TOOLS = {
     "list_schemas",
     "list_hydrometers",
-    "manage_hydrometers",
     "list_dscenarios",
     "list_dscenario_objects",
-    "manage_dscenario",
+    "create_dscenario",
+    "select_dscenario",
+    "delete_dscenario",
     "manage_dscenario_objects",
     "find_features",
     "get_feature",
@@ -308,7 +308,7 @@ _EXPECTED_TOOLS = {
     "list_street_arcs",
     "list_mapzones",
     "get_dma_contents",
-    "get_water_balance",
+    "list_dma_boundary_nodes",
     "list_mincuts",
     "get_mincut",
     "list_mincut_valves",
@@ -334,7 +334,7 @@ _READ_ONLY = {
     "list_street_arcs",
     "list_mapzones",
     "get_dma_contents",
-    "get_water_balance",
+    "list_dma_boundary_nodes",
     "list_mincuts",
     "get_mincut",
     "list_mincut_valves",
@@ -343,8 +343,7 @@ _READ_ONLY = {
 }
 
 _DESTRUCTIVE = {
-    "manage_hydrometers",
-    "manage_dscenario",
+    "delete_dscenario",
     "manage_dscenario_objects",
     "set_mincut_state",
     "delete_mincut",
@@ -681,7 +680,7 @@ def test_mcp_list_hydrometers_truncated(client, default_params):
 @pytest.mark.ws
 def test_mcp_water_balance_dma_ids(client, default_params):
     assert_ready(client)
-    listed, listed_body = _call_tool(client, "get_water_balance", {"schema": default_params["schema"]})
+    listed, listed_body = _call_tool(client, "list_dma_boundary_nodes", {"schema": default_params["schema"]})
     if listed.status_code != 200:
         pytest.skip(listed.text)
     result = (listed_body or {}).get("result") or {}
@@ -693,7 +692,7 @@ def test_mcp_water_balance_dma_ids(client, default_params):
     dma_id = items[0].get("dma_id")
     resp, body = _call_tool(
         client,
-        "get_water_balance",
+        "list_dma_boundary_nodes",
         {"schema": default_params["schema"], "dma_ids": [int(dma_id)]},
     )
     assert resp.status_code == 200, resp.text
