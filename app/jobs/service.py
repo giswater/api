@@ -106,6 +106,9 @@ class JobService:
             step_total=int(progress.get("step_total", 0)),
             message=progress.get("message"),
             poll_interval_ms=poll,
+            step_durations_ms={
+                str(step): int(duration) for step, duration in (progress.get("step_durations_ms") or {}).items()
+            },
         )
 
     @staticmethod

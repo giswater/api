@@ -31,6 +31,7 @@ class JobStatusResponse(BaseModel):
     step_total: int = 0
     message: str | None = None
     poll_interval_ms: int | None = None
+    step_durations_ms: dict[str, int] = Field(default_factory=dict)
 
 
 class JobCreateResponse(BaseModel):

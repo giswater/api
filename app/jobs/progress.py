@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -25,6 +25,7 @@ class JobProgressState:
     step_current: int = 0
     step_total: int = 0
     message: str | None = None
+    step_durations_ms: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +35,7 @@ class JobProgressState:
             "step_current": self.step_current,
             "step_total": self.step_total,
             "message": self.message,
+            "step_durations_ms": dict(self.step_durations_ms),
         }
 
 
@@ -82,7 +84,14 @@ class JobProgressReporter:
         self._min_interval = min_interval_seconds
         self._last_flush = 0.0
         self._completed_steps: set[str] = set()
+        self._step_started_at: dict[str, float] = {}
         self.state = JobProgressState()
+
+    def _close_step(self, step: str, now: float) -> None:
+        started = self._step_started_at.get(step)
+        if started is None:
+            return
+        self.state.step_durations_ms[step] = max(0, int((now - started) * 1000))
 
     async def set_step(
         self,
@@ -93,6 +102,12 @@ class JobProgressReporter:
         message: str | None = None,
         force: bool = False,
     ) -> None:
+        now = time.monotonic()
+        previous = self.state.current_step
+        if previous and previous != step and previous not in self._completed_steps:
+            self._close_step(previous, now)
+        if step not in self._step_started_at:
+            self._step_started_at[step] = now
         cfg = JOB_STEP_CONFIG.get(self._job_type, {}).get(step, {})
         self.state.current_step = step
         self.state.step_label = cfg.get("label", step)
@@ -109,6 +124,7 @@ class JobProgressReporter:
         await self._flush(force=force)
 
     async def complete_step(self, step: str, *, force: bool = True) -> None:
+        self._close_step(step, time.monotonic())
         self._completed_steps.add(step)
         self.state.percentage = calculate_percentage(
             self._job_type,
