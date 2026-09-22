@@ -10,6 +10,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from fastmcp.exceptions import ToolError
 
 from app.core.constants import ADMIN_PREFIX
 from app.tenancy import state
@@ -259,22 +260,18 @@ def test_mcp_water_balance_budget(client, default_params):
     assert len(json.dumps(body)) < 80_000
 
 
-def test_mcp_dma_connecs_budget(client, default_params):
+def test_mcp_find_features_connecs_budget(client, default_params):
     assert_ready(client)
-    dmas = client.get(api("/om/dmas"), params=default_params)
-    if dmas.status_code != 200:
-        pytest.skip("dmas not available")
-    items = ((dmas.json().get("body") or {}).get("data") or {}).get("dmas") or []
-    if not items:
-        pytest.skip("no dmas")
-    dma_id = items[0].get("dmaId") or items[0].get("dma_id")
     resp, body = _call_tool(
         client,
-        "get_dma_contents",
-        {"schema": default_params["schema"], "dma_id": int(dma_id), "content": "connecs", "limit": 20},
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "connec", "limit": 20},
     )
     if resp.status_code != 200:
         pytest.skip(resp.text)
+    result = (body or {}).get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(body))
     assert len(json.dumps(body)) < 80_000
 
 
@@ -307,7 +304,6 @@ _EXPECTED_TOOLS = {
     "list_streets",
     "list_street_arcs",
     "list_mapzones",
-    "get_dma_contents",
     "list_dma_boundary_nodes",
     "list_mincuts",
     "get_mincut",
@@ -333,7 +329,6 @@ _READ_ONLY = {
     "list_streets",
     "list_street_arcs",
     "list_mapzones",
-    "get_dma_contents",
     "list_dma_boundary_nodes",
     "list_mincuts",
     "get_mincut",
@@ -527,6 +522,8 @@ def test_mcp_get_feature_at_point_ws(client, default_params):
     keys = list(data)
     assert not any(k.startswith(("btn_", "tbl_", "hspacer_")) for k in keys)
     assert "fields" not in data
+    assert "xcoord" not in data
+    assert "lat" not in data
 
 
 @pytest.mark.ud
@@ -557,7 +554,14 @@ def test_summarise_mincut_drops_feature_collections():
         "mincutId": 1,
         "mincutState": 0,
         "geometry": {"bbox": {"x1": 1, "y1": 2, "x2": 3, "y2": 4}},
-        "info": {"descript": "x"},
+        "info": {
+            "values": [
+                {"id": 282, "message": "MINCUT STATS"},
+                {"id": 284, "message": "Number of arcs: 37"},
+                {"id": 285, "message": "Length of affected network: 1741.37 mts"},
+                {"id": 288, "message": 'Hydrometers classification: [{"category" : "Domestic", "number" : 62}]'},
+            ]
+        },
         "mincutNode": {
             "type": "FeatureCollection",
             "features": [
@@ -585,6 +589,10 @@ def test_summarise_mincut_drops_feature_collections():
     assert summary["mincut_id"] == 1
     assert summary["categories"]["node"]["ids"] == [10]
     assert summary["categories"]["arc"]["ids"] == [20]
+    assert "bbox" not in summary["categories"]["node"]
+    assert summary["stats"]["arcs"] == 37
+    assert summary["stats"]["length_m"] == 1741.37
+    assert summary["stats"]["hydrometer_classes"][0]["category"] == "Domestic"
     with_geom = _summarise_mincut(raw, include_geometry=True)
     assert "FeatureCollection" in json.dumps(with_geom)
 
@@ -670,11 +678,12 @@ def test_mcp_list_hydrometers_truncated(client, default_params):
     items = data.get("items") or []
     if not items:
         pytest.skip("no hydrometers")
-    assert data["count"] >= len(items)
-    if data["count"] == 1:
-        pytest.skip("only one hydrometer")
+    assert data["count"] == len(items)
+    assert isinstance(data.get("total"), int)
+    if data["total"] <= len(items):
+        pytest.skip("only one hydrometer page")
     assert data["truncated"] is True
-    assert data["count"] > len(items)
+    assert data["total"] > data["count"]
 
 
 @pytest.mark.ws
@@ -709,7 +718,7 @@ def test_mcp_find_features_fields_id_and_count_only(client, default_params):
     listed, listed_body = _call_tool(
         client,
         "find_features",
-        {"schema": schema, "feature_type": "node", "limit": 3, "expl_id": 1},
+        {"schema": schema, "feature_type": "node", "limit": 3, "expl_id": 1, "include_total": True},
     )
     assert listed.status_code == 200, listed.text
     result = listed_body.get("result") or {}
@@ -720,6 +729,7 @@ def test_mcp_find_features_fields_id_and_count_only(client, default_params):
         pytest.skip("no nodes")
     assert data.get("filters") == {"expl_id": 1} or data.get("filters", {}).get("expl_id") == 1
     assert "total" in data
+    assert data["truncated"] is (data["total"] > data["count"])
     row = items[0]
     assert set(row) <= {
         "node_id",
@@ -757,9 +767,12 @@ def test_mcp_search_feature_type(client, default_params):
     result = body.get("result") or {}
     if result.get("isError"):
         pytest.skip(json.dumps(body))
-    items = _tool_data(body).get("items") or []
+    data = _tool_data(body)
+    items = data.get("items") or []
     if not items:
         pytest.skip("no search hits")
+    assert data["count"] == len(items)
+    assert data["total"] >= len(items)
     known = {"ve_node": "node", "ve_arc": "arc", "ve_connec": "connec", "ve_gully": "gully", "ve_link": "link"}
     for item in items:
         table = item.get("table")
@@ -914,3 +927,143 @@ def test_mcp_epsg_mismatch(client, default_params):
     payload = json.dumps(body).lower()
     assert "reproject" in payload or "epsg" in payload
     assert "null" not in payload or "does not match" in payload
+
+
+@pytest.mark.ws
+def test_mcp_list_mapzones_dma_snake_case(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "list_mapzones",
+        {"schema": default_params["schema"], "zone_type": "dma", "limit": 10},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(body))
+    data = _tool_data(body)
+    items = data.get("items") or []
+    if not items:
+        pytest.skip("no dmas")
+    row = items[0]
+    assert "dmaId" not in row
+    assert "dmaName" not in row
+    assert "dma_id" in row
+    assert "total" in data
+    assert data["count"] == len(items)
+
+
+@pytest.mark.ws
+def test_mcp_list_mincut_valves_drops_geom(client, default_params):
+    assert_ready(client)
+    listed = client.get(api("/om/mincuts"), params=default_params)
+    if listed.status_code != 200:
+        pytest.skip("mincuts not available")
+    fields = ((listed.json().get("body") or {}).get("data") or {}).get("fields") or []
+    if not fields:
+        pytest.skip("no mincuts")
+    mincut_id = fields[0].get("id") or fields[0].get("mincut_id")
+    resp, body = _call_tool(
+        client,
+        "list_mincut_valves",
+        {"schema": default_params["schema"], "mincut_id": int(mincut_id)},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(body))
+    items = _tool_data(body).get("items") or []
+    if not items:
+        pytest.skip("no valves")
+    dumped = json.dumps(items)
+    assert "the_geom" not in dumped
+    assert "FeatureCollection" not in dumped
+
+
+def test_mcp_list_dscenario_objects_drops_geom(client, default_params):
+    assert_ready(client)
+    listed, listed_body = _call_tool(client, "list_dscenarios", {"schema": default_params["schema"], "limit": 20})
+    assert listed.status_code == 200, listed.text
+    result = listed_body.get("result") or {}
+    if result.get("isError"):
+        pytest.skip(json.dumps(listed_body))
+    dscenarios = _tool_data(listed_body).get("items") or []
+    if not dscenarios:
+        pytest.skip("no dscenarios")
+    ds_id = dscenarios[0].get("dscenario_id") or dscenarios[0].get("id")
+    if ds_id is None:
+        pytest.skip("no dscenario id")
+    resp, body = _call_tool(
+        client,
+        "list_dscenario_objects",
+        {
+            "schema": default_params["schema"],
+            "dscenario_id": int(ds_id),
+            "object_type": "demand",
+            "limit": 5,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    call_result = body.get("result") or {}
+    if call_result.get("isError"):
+        pytest.skip(json.dumps(body))
+    data = _tool_data(body)
+    items = data.get("items") or []
+    if not items:
+        pytest.skip("no dscenario demand objects")
+    dumped = json.dumps(items)
+    assert "the_geom" not in dumped
+    assert "FeatureCollection" not in dumped
+    assert data["count"] == len(items)
+    assert "total" in data
+
+
+def test_mcp_create_dscenario_shape(client, default_params):
+    from app.mcp.tools.epa import _shape_dscenario
+
+    shaped = _shape_dscenario(
+        {
+            "dscenario_id": "2",
+            "info": {"values": [{"id": 1, "message": "CREATE EMPTY DSCENARIO"}]},
+        },
+        name="mcp_test",
+        dscenario_type="DEMAND",
+    )
+    assert shaped == {"dscenario_id": 2, "name": "mcp_test", "dscenario_type": "DEMAND"}
+
+
+def test_mcp_rewrite_dscenario_column_error():
+    from app.mcp.tools.epa import _rewrite_dscenario_error
+
+    rewritten = _rewrite_dscenario_error(
+        ToolError('HTTP 500: column "node_id" of relation "ve_inp_dscenario_demand" does not exist')
+    )
+    text = str(rewritten)
+    assert "HTTP 500" not in text
+    assert "feature_id" in text
+    assert "demand" in text
+
+
+def test_mcp_rewrite_mincut_delete_error():
+    from app.mcp.tools.mincut import _rewrite_mincut_error
+
+    rewritten = _rewrite_mincut_error(ToolError("Mincut not on planning, cancel it."))
+    assert "state 4" in str(rewritten)
+    passthrough = ToolError("boom")
+    assert _rewrite_mincut_error(passthrough) is passthrough
+
+
+@pytest.mark.ws
+def test_mcp_find_features_omits_total_by_default(client, default_params):
+    assert_ready(client)
+    resp, body = _call_tool(
+        client,
+        "find_features",
+        {"schema": default_params["schema"], "feature_type": "node", "limit": 2},
+    )
+    assert resp.status_code == 200, resp.text
+    result = body.get("result") or {}
+    assert result.get("isError") in (None, False)
+    data = _tool_data(body)
+    assert "total" not in data
+    assert "filters" not in data

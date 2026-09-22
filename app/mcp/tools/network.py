@@ -5,7 +5,8 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from typing import Annotated, Literal
+import json
+from typing import Annotated, Any, Literal
 
 from fastmcp.exceptions import ToolError
 from pydantic import Field
@@ -15,6 +16,10 @@ from app.mcp.registry import SchemaName, tool
 from app.mcp.shaping import compact_row, fc_summary, unwrap
 
 _POINT_GROUPS = {"NODE": "node_ids", "CONNEC": "connec_ids", "GULLY": "gully_ids"}
+_ZOOM_RATIO_DESC = (
+    "Map zoom ratio passed to Giswater (not a snapping radius in CRS units). "
+    "Feature precedence at the click: Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
+)
 
 
 def _flow_point_ids(fc: dict | None) -> dict[str, list]:
@@ -36,6 +41,48 @@ def _flow_point_ids(fc: dict | None) -> dict[str, list]:
     return grouped
 
 
+def _code_from_label(label: Any) -> Any:
+    if not isinstance(label, str) or not label.strip():
+        return None
+    try:
+        parsed = json.loads(label)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict):
+        return parsed.get("code")
+    return None
+
+
+def _profile_nodes(rows: list | None) -> list:
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        item = dict(row)
+        item.pop("descript", None)
+        out.append(compact_row(item))
+    return out
+
+
+def _profile_terrain(rows: list | None) -> list:
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        item = dict(row)
+        code = _code_from_label(item.pop("label_n1", None))
+        if code is not None and item.get("code") is None:
+            item["code"] = code
+        out.append(compact_row(item))
+    return out
+
+
+def _profile_arcs(rows: list | None) -> list:
+    return [compact_row(row) if isinstance(row, dict) else row for row in rows or []]
+
+
 @tool(feature="api_flow", read_only=True, project_types={"UD"})
 async def trace_flow(
     api: TenantApi,
@@ -45,15 +92,7 @@ async def trace_flow(
     x: Annotated[float | None, Field(description="X in project CRS if node_id is omitted")] = None,
     y: Annotated[float | None, Field(description="Y in project CRS if node_id is omitted")] = None,
     epsg: Annotated[int | None, Field(description="Project EPSG if using x/y (not 4326)")] = None,
-    zoom_ratio: Annotated[
-        float,
-        Field(
-            description=(
-                "Snapping radius in CRS units. Determines which feature wins: "
-                "Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
-            )
-        ),
-    ] = 1000,
+    zoom_ratio: Annotated[float, Field(description=_ZOOM_RATIO_DESC)] = 1000,
     include_geometry: Annotated[bool, Field(description="Include GeoJSON point/line collections")] = False,
 ) -> dict:
     """Trace flow upstream or downstream from a node id or project-CRS coordinates.
@@ -72,7 +111,7 @@ async def trace_flow(
     raw = await api.post("/om/flow", schema=schema, json=body)
     data = unwrap(raw)
     points = _flow_point_ids(data.get("point"))
-    line = fc_summary(data.get("line"), "arc_id")
+    line = fc_summary(data.get("line"), "arc_id", with_bbox=False)
     result = {
         "init_node": data.get("initPoint"),
         **points,
@@ -110,13 +149,17 @@ async def get_profile(
     }
     raw = await api.post("/om/profiles", schema=schema, json=body)
     data = unwrap(raw)
-    result = {
-        "node": data.get("node") or [],
-        "terrain": data.get("terrain") or [],
-        "arc": data.get("arc") or [],
-        "extension": data.get("extension"),
-        "initpoint": data.get("initpoint"),
+    result: dict[str, Any] = {
+        "node": _profile_nodes(data.get("node")),
+        "terrain": _profile_terrain(data.get("terrain")),
+        "arc": _profile_arcs(data.get("arc")),
     }
+    extension = data.get("extension")
+    initpoint = data.get("initpoint")
+    if extension:
+        result["extension"] = extension
+    if initpoint:
+        result["initpoint"] = initpoint
     if include_geometry:
         result["point"] = compact_row(data.get("point"))
         result["line"] = compact_row(data.get("line"))

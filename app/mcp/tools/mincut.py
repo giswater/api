@@ -8,6 +8,7 @@ or (at your option) any later version.
 from __future__ import annotations
 
 import json
+import re
 from typing import Annotated, Any, Literal
 
 from fastmcp.exceptions import ToolError
@@ -15,7 +16,7 @@ from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DEFAULT_LIMIT, SchemaName, clamp_limit, tool
-from app.mcp.shaping import fc_summary, list_rows, unwrap
+from app.mcp.shaping import as_int, fc_summary, list_rows, unwrap
 
 MincutState = Literal[0, 1, 2, 3, 4, 5]
 
@@ -30,6 +31,29 @@ _FC_KEYS = {
     "arc": ("mincutArc", "arc_id"),
 }
 
+_STATE_LABELS = {
+    "planified": 0,
+    "in progress": 1,
+    "finished": 2,
+    "canceled": 3,
+    "cancelled": 3,
+    "on planning": 4,
+    "conflict": 5,
+}
+
+_STAT_PATTERNS: tuple[tuple[str, str, type], ...] = (
+    (r"Number of arcs:\s*([\d.]+)", "arcs", int),
+    (r"Length of affected network:\s*([\d.]+)", "length_m", float),
+    (r"Total water volume:\s*([\d.]+)", "volume_m3", float),
+    (r"Number of connecs affected:\s*([\d.]+)", "connecs", int),
+    (r"Total of hydrometers affected:\s*([\d.]+)", "hydrometers", int),
+)
+_CLASS_RE = re.compile(r"Hydrometers classification:\s*(\[.*\])", re.DOTALL)
+_ZOOM_RATIO_DESC = (
+    "Map zoom ratio passed to Giswater (not a snapping radius in CRS units). "
+    "Feature precedence at the click: Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
+)
+
 
 def _filter_fields(**fields: Any) -> dict | None:
     payload = {}
@@ -42,6 +66,45 @@ def _filter_fields(**fields: Any) -> dict | None:
     return {"filterFields": json.dumps(payload)}
 
 
+def _parse_mincut_stats(info: Any) -> dict | None:  # noqa: C901
+    values = info.get("values") if isinstance(info, dict) else None
+    if not values:
+        return None
+    messages = [row.get("message") for row in values if isinstance(row, dict)]
+    stats: dict[str, Any] = {}
+    leftover: list[str] = []
+    for message in messages:
+        if not isinstance(message, str) or not message.strip():
+            continue
+        text = message.strip()
+        if text in {"MINCUT STATS", "------------------------------"} or set(text) <= {"-"}:
+            continue
+        matched = False
+        for pattern, key, conv in _STAT_PATTERNS:
+            found = re.search(pattern, text)
+            if not found:
+                continue
+            try:
+                stats[key] = conv(found.group(1))
+            except (TypeError, ValueError):
+                leftover.append(text)
+            matched = True
+            break
+        if matched:
+            continue
+        classes = _CLASS_RE.search(text)
+        if classes:
+            try:
+                stats["hydrometer_classes"] = json.loads(classes.group(1))
+            except json.JSONDecodeError:
+                leftover.append(text)
+            continue
+        leftover.append(text)
+    if leftover:
+        stats["messages"] = leftover
+    return stats or None
+
+
 def _summarise_mincut(data: dict, include_geometry: bool) -> dict:
     geom = data.get("geometry") or {}
     bbox = None
@@ -51,19 +114,55 @@ def _summarise_mincut(data: dict, include_geometry: bool) -> dict:
             bbox = [box.get("x1"), box.get("y1"), box.get("x2"), box.get("y2")]
         elif "x" in geom and "y" in geom:
             bbox = [geom.get("x"), geom.get("y"), geom.get("x"), geom.get("y")]
-    categories = {name: fc_summary(data.get(key), id_key) for name, (key, id_key) in _FC_KEYS.items()}
-    result = {
-        "mincut_id": data.get("mincutId"),
-        "state": data.get("mincutState"),
+    categories = {name: fc_summary(data.get(key), id_key, with_bbox=False) for name, (key, id_key) in _FC_KEYS.items()}
+    result: dict[str, Any] = {
+        "mincut_id": as_int(data.get("mincutId")) if data.get("mincutId") is not None else data.get("mincutId"),
+        "state": as_int(data.get("mincutState")) if data.get("mincutState") is not None else data.get("mincutState"),
         "bbox": bbox,
         "categories": categories,
     }
-    info = data.get("info")
-    if info:
-        result["info"] = info
+    stats = _parse_mincut_stats(data.get("info"))
+    if stats:
+        result["stats"] = stats
     if include_geometry:
         result["geometry"] = {name: data.get(key) for name, (key, _) in _FC_KEYS.items()}
     return result
+
+
+def _fill_empty_summary(summary: dict, mincut_id: int, *, action: str | None = None, state: int | None = None) -> dict:
+    if summary.get("mincut_id") is not None:
+        return summary
+    summary["mincut_id"] = mincut_id
+    if action is not None:
+        summary["action"] = action
+    if state is not None:
+        summary["state"] = state
+    return summary
+
+
+def _shape_mincut_list_row(row: dict) -> dict:
+    out = dict(row)
+    if "mincut_id" not in out and "id" in out:
+        out["mincut_id"] = out.pop("id")
+    else:
+        out.pop("id", None)
+    state = out.get("state")
+    if isinstance(state, str):
+        mapped = _STATE_LABELS.get(state.strip().lower())
+        if mapped is not None:
+            out["state"] = mapped
+    return out
+
+
+def _rewrite_mincut_error(exc: ToolError) -> ToolError:
+    text = str(exc)
+    lowered = text.lower()
+    if "not on planning" in lowered or "cannot be deleted" in lowered:
+        return ToolError(
+            "delete_mincut only works while the mincut is on planning (state 4). "
+            "Planified or canceled mincuts cannot be deleted."
+        )
+    return exc
 
 
 @tool(feature="api_mincut", read_only=True, project_types={"WS"})
@@ -77,14 +176,16 @@ async def list_mincuts(
     exploitation: Annotated[int | None, Field(description="Exploitation id")] = None,
     limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
-    """List mincuts. State: 0 planified, 1 in progress, 2 finished, 3 canceled, 4 on planning, 5 conflict."""
+    """List mincuts. State is numeric: 0 planified, 1 in progress, 2 finished, 3 canceled, 4 on planning, 5 conflict."""
     limit = clamp_limit(limit)
     raw = await api.get(
         "/om/mincuts",
         schema=schema,
         params=_filter_fields(state=state, expl_id=exploitation),
     )
-    return list_rows(raw, limit=limit)
+    shaped = list_rows(raw, limit=limit)
+    shaped["items"] = [_shape_mincut_list_row(item) if isinstance(item, dict) else item for item in shaped["items"]]
+    return shaped
 
 
 @tool(feature="api_mincut", read_only=True, project_types={"WS"})
@@ -94,7 +195,7 @@ async def get_mincut(
     mincut_id: Annotated[int, Field(description="Mincut id")],
     include_geometry: Annotated[bool, Field(description="Include GeoJSON FeatureCollections")] = False,
 ) -> dict:
-    """Mincut summary: state, bbox, and counts/ids per valve category and affected features."""
+    """Mincut summary: state, project-CRS bbox, ids per valve category, and parsed stats (no GeoJSON)."""
     raw = await api.get(f"/om/mincuts/{mincut_id}", schema=schema)
     return _summarise_mincut(unwrap(raw), include_geometry)
 
@@ -106,7 +207,7 @@ async def list_mincut_valves(
     mincut_id: Annotated[int, Field(description="Mincut id")],
     limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DEFAULT_LIMIT,
 ) -> dict:
-    """Valves associated with a mincut."""
+    """Valves associated with a mincut. Point geometry is returned as x/y, not the_geom."""
     limit = clamp_limit(limit)
     raw = await api.get(f"/om/mincuts/{mincut_id}/valves", schema=schema)
     return list_rows(raw, limit=limit)
@@ -125,17 +226,12 @@ async def create_mincut(
     mincut_type: Annotated[Literal["Demo", "Test", "Real"], Field(description="Mincut type")] = "Demo",
     anl_cause: Annotated[Literal["Accidental", "Planified"], Field(description="Cause")] = "Accidental",
     anl_descript: Annotated[str | None, Field(description="Optional description")] = None,
-    zoom_ratio: Annotated[
-        float,
-        Field(
-            description=(
-                "Snapping radius in CRS units when using x/y. Determines which feature wins: "
-                "Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
-            )
-        ),
-    ] = 1000,
+    zoom_ratio: Annotated[float, Field(description=_ZOOM_RATIO_DESC)] = 1000,
 ) -> dict:
-    """Create an unplanned mincut from an arc_id or project-CRS coordinates. Not idempotent — retrying creates a duplicate."""
+    """Create an unplanned mincut from an arc_id or project-CRS coordinates. Not idempotent — retrying creates a duplicate.
+
+    Set ``anl_descript`` here. ``update_mincut`` planifies (state 4 → 0); after that the mincut cannot be deleted.
+    """
     has_arc = arc_id is not None
     has_any_xy = x is not None or y is not None
     if has_arc and has_any_xy:
@@ -165,7 +261,11 @@ async def update_mincut(
     anl_descript: Annotated[str | None, Field(description="Plan description")] = None,
     exec_descript: Annotated[str | None, Field(description="Execution description")] = None,
 ) -> dict:
-    """Update plan or execution fields of an existing mincut."""
+    """Accept/planify a mincut (GW mincutAccept): state 4 on-planning → 0 planified.
+
+    After this the mincut can only be cancelled, never deleted. Set ``anl_descript`` on
+    ``create_mincut`` if the record should stay disposable.
+    """
     body: dict[str, Any] = {"use_psectors": False}
     plan = {k: v for k, v in {"mincut_type": mincut_type, "anl_descript": anl_descript}.items() if v is not None}
     exec_ = {k: v for k, v in {"exec_descript": exec_descript}.items() if v is not None}
@@ -174,7 +274,7 @@ async def update_mincut(
     if exec_:
         body["exec"] = exec_
     raw = await api.patch(f"/om/mincuts/{mincut_id}", schema=schema, json=body)
-    return _summarise_mincut(unwrap(raw), include_geometry=False)
+    return _fill_empty_summary(_summarise_mincut(unwrap(raw), include_geometry=False), mincut_id, action="update")
 
 
 @tool(feature="api_mincut", project_types={"WS"})
@@ -185,10 +285,17 @@ async def toggle_mincut_valve(
     valve_id: Annotated[int, Field(description="Valve node id")],
     change: Annotated[Literal["status", "unaccess"], Field(description="Toggle status or unaccess")],
 ) -> dict:
-    """Toggle a mincut valve. This is a TOGGLE, not a setter: calling twice restores the original state. Do not retry after a timeout."""
+    """Toggle a mincut valve by node_id. This is a TOGGLE, not a setter: calling twice restores the original state.
+
+    Do not retry after a timeout. GW recalculates the mincut (valve row ids are rewritten).
+    ``status`` may be a no-op once the mincut is planified (state 0); check ``changestatus``
+    via ``list_mincut_valves`` rather than assuming the flag flipped.
+    """
     path = f"/om/mincuts/{mincut_id}/valves/{valve_id}/toggle-{change}"
     raw = await api.post(path, schema=schema, json={"use_psectors": False})
-    return _summarise_mincut(unwrap(raw), include_geometry=False)
+    return _fill_empty_summary(
+        _summarise_mincut(unwrap(raw), include_geometry=False), mincut_id, action=f"toggle-{change}"
+    )
 
 
 @tool(feature="api_mincut", destructive=True, project_types={"WS"})
@@ -199,13 +306,19 @@ async def set_mincut_state(
     action: Annotated[Literal["start", "end", "cancel"], Field(description="Lifecycle action")],
     shutoff_required: Annotated[bool, Field(description="Required when action is end")] = True,
 ) -> dict:
-    """Change mincut lifecycle. Starting a mincut interrupts water supply to customers."""
+    """Change mincut lifecycle. Starting a mincut interrupts water supply to customers.
+
+    ``cancel`` is terminal: the mincut cannot be deleted afterwards.
+    """
     path = f"/om/mincuts/{mincut_id}/{action}"
     body: dict[str, Any] = {}
     if action == "end":
         body["shutoff_required"] = shutoff_required
     raw = await api.post(path, schema=schema, json=body or None)
-    return _summarise_mincut(unwrap(raw), include_geometry=False)
+    next_state = {"start": 1, "end": 2, "cancel": 3}.get(action)
+    return _fill_empty_summary(
+        _summarise_mincut(unwrap(raw), include_geometry=False), mincut_id, action=action, state=next_state
+    )
 
 
 @tool(feature="api_mincut", destructive=True, project_types={"WS"})
@@ -214,7 +327,9 @@ async def delete_mincut(
     schema: SchemaName,
     mincut_id: Annotated[int, Field(description="Mincut id")],
 ) -> dict:
-    """Permanently delete a mincut record."""
-    return _summarise_mincut(
-        unwrap(await api.delete(f"/om/mincuts/{mincut_id}", schema=schema)), include_geometry=False
-    )
+    """Permanently delete a mincut record. Only works while the mincut is on planning (state 4)."""
+    try:
+        raw = await api.delete(f"/om/mincuts/{mincut_id}", schema=schema)
+    except ToolError as exc:
+        raise _rewrite_mincut_error(exc) from exc
+    return _fill_empty_summary(_summarise_mincut(unwrap(raw), include_geometry=False), mincut_id, action="delete")

@@ -5,14 +5,14 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from app.mcp.client import TenantApi
-from app.mcp.registry import DEFAULT_LIMIT, DENSE_LIMIT, SchemaName, clamp_limit, tool
-from app.mcp.shaping import compact_row, feature_rows, shape_feature, unwrap
+from app.mcp.registry import DEFAULT_LIMIT, SchemaName, clamp_limit, tool
+from app.mcp.shaping import DMA_ALIASES, compact_row, list_payload, unwrap
 
 ZoneType = Literal[
     "dma",
@@ -56,16 +56,6 @@ _ZONE_LIST_KEY: dict[ZoneType, str] = {
 _WS_ONLY_ZONES = frozenset({"dma", "macrodma", "presszone", "dqa", "macrodqa"})
 
 
-def _drop_geometry(items: list[Any]) -> list[Any]:
-    out = []
-    for item in items:
-        if isinstance(item, dict):
-            out.append({k: v for k, v in item.items() if k.lower() not in {"geometry", "the_geom", "thegeom"}})
-        else:
-            out.append(item)
-    return out
-
-
 async def _reject_ws_only_zone(api: TenantApi, schema: str, zone_type: ZoneType) -> None:
     if zone_type not in _WS_ONLY_ZONES:
         return
@@ -89,44 +79,11 @@ async def list_mapzones(
     """
     limit = clamp_limit(limit)
     await _reject_ws_only_zone(api, schema, zone_type)
-    raw = await api.get(_ZONE_PATH[zone_type], schema=schema)
-    data = unwrap(raw)
-    items = [compact_row(item) for item in _drop_geometry(list(data.get(_ZONE_LIST_KEY[zone_type]) or []))]
-    # Client-truncated: REST returns the full list; MCP slices.
-    truncated = len(items) > limit
-    items = items[:limit]
-    return {"zone_type": zone_type, "items": items, "count": len(items), "truncated": truncated}
-
-
-@tool(feature="api_mapzones", read_only=True, project_types={"WS"})
-async def get_dma_contents(
-    api: TenantApi,
-    schema: SchemaName,
-    dma_id: Annotated[int, Field(description="DMA id")],
-    content: Annotated[Literal["hydrometers", "connecs"], Field(description="hydrometers or connecs")],
-    limit: Annotated[int, Field(description="Max rows to return (1–500)")] = DENSE_LIMIT,
-) -> dict:
-    """DMA contents: hydrometers or connecs (curated columns)."""
-    limit = clamp_limit(limit)
-    if content == "connecs":
-        # Server-limited: REST applied LIMIT (see feature_rows).
-        raw = await api.get("/features/connecs", schema=schema, params={"dma_id": dma_id, "limit": limit})
-        shaped = feature_rows(raw, limit=limit)
-        items = [shape_feature(item, "connec", "summary") for item in shaped["items"]]
-        return {
-            "dma_id": dma_id,
-            "content": content,
-            "items": items,
-            "count": len(items),
-            "truncated": shaped["truncated"],
-        }
-    raw = await api.get(f"/om/dmas/{dma_id}/hydrometers", schema=schema)
-    data = unwrap(raw)
-    items = list(data.get("hydrometers") or [])
-    # Client-truncated: REST returns the full list; MCP slices.
-    truncated = len(items) > limit
-    items = items[:limit]
-    return {"dma_id": dma_id, "content": content, "items": items, "count": len(items), "truncated": truncated}
+    data = unwrap(await api.get(_ZONE_PATH[zone_type], schema=schema))
+    items = list(data.get(_ZONE_LIST_KEY[zone_type]) or [])
+    aliases = DMA_ALIASES if zone_type == "dma" else None
+    extra = {"zone_type": zone_type}
+    return list_payload(items, limit=limit, total=len(items), extra=extra, aliases=aliases)
 
 
 @tool(feature="api_water_balance", read_only=True, project_types={"WS"})
@@ -137,8 +94,7 @@ async def list_dma_boundary_nodes(
 ) -> dict:
     """DMA-boundary nodes and flow_sign (in/out). Not NRW or volumetric water balance."""
     params = {"dma_id": dma_ids} if dma_ids else None
-    raw = await api.get("/om/waterbalance", schema=schema, params=params)
-    data = unwrap(raw)
+    data = unwrap(await api.get("/om/waterbalance", schema=schema, params=params))
     items = []
     for row in data.get("waterbalance") or []:
         node = row.get("node") or {}
@@ -152,4 +108,4 @@ async def list_dma_boundary_nodes(
                 }
             )
         )
-    return {"items": items, "count": len(items)}
+    return {"items": items, "count": len(items), "total": len(items), "truncated": False}

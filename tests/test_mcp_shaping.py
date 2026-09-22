@@ -9,11 +9,15 @@ import pytest
 from fastmcp.exceptions import ToolError
 
 from app.mcp.shaping import (
+    DMA_ALIASES,
     compact_row,
+    drop_geometry,
+    drop_redundant_coords,
     failed_text,
     fc_summary,
     feature_rows,
     fields_to_dict,
+    list_payload,
     list_rows,
     one_row,
     page_total,
@@ -86,6 +90,7 @@ def test_list_rows():
     shaped = list_rows(resp, limit=10)
     assert shaped["count"] == 2
     assert shaped["truncated"] is False
+    assert shaped["total"] == 2
     assert shaped["items"][0] == {"a": 1}
     assert "label" not in shaped["items"][1]
 
@@ -267,3 +272,78 @@ def test_refuse_incompatible_accepts_current():
 
 def test_failed_text_prefers_msgerr():
     assert failed_text({"MSGERR": "a", "message": {"text": "b"}}) == "a"
+
+
+def test_list_payload_total_clears_truncated():
+    shaped = list_payload([{"id": 1}], limit=1, total=1)
+    assert shaped == {"items": [{"id": 1}], "count": 1, "truncated": False, "total": 1}
+    full = list_payload([{"id": i} for i in range(5)], limit=5, total=12)
+    assert full["count"] == 5
+    assert full["truncated"] is True
+    assert full["total"] == 12
+
+
+def test_list_payload_heuristic_without_total():
+    shaped = list_payload([{"id": i} for i in range(5)], limit=5)
+    assert "total" not in shaped
+    assert shaped["truncated"] is True
+    short = list_payload([{"id": 1}], limit=5)
+    assert short["truncated"] is False
+
+
+def test_drop_geometry_extracts_point_xy():
+    row = drop_geometry(
+        {
+            "node_id": 1086,
+            "the_geom": {
+                "crs": {"type": "name", "properties": {"name": "EPSG:25831"}},
+                "type": "Point",
+                "coordinates": [419133.5, 4576241.1],
+            },
+        }
+    )
+    assert "the_geom" not in row
+    assert row["x"] == 419133.5
+    assert row["y"] == 4576241.1
+
+
+def test_dma_aliases_in_list_payload():
+    shaped = list_payload(
+        [{"dmaId": 1, "dmaName": "dma1", "explId": [1], "macroDmaId": 0, "geometry": "POLYGON((0 0))"}],
+        limit=10,
+        total=1,
+        aliases=DMA_ALIASES,
+    )
+    row = shaped["items"][0]
+    assert row["dma_id"] == 1
+    assert row["name"] == "dma1"
+    assert row["expl_id"] == [1]
+    assert row["macrodma_id"] == 0
+    assert "geometry" not in row
+    assert "dmaId" not in row
+
+
+def test_drop_redundant_coords():
+    row = drop_redundant_coords(
+        {
+            "node_id": 1,
+            "lat": 41.3,
+            "long": 2.0,
+            "xcoord": 1.0,
+            "ycoord": 2.0,
+            "coordinates": {"x": 1.0, "y": 2.0, "epsg": 25831},
+        }
+    )
+    assert "lat" not in row
+    assert "xcoord" not in row
+    assert row["coordinates"]["x"] == 1.0
+    assert row["node_id"] == 1
+
+
+def test_feature_rows_omits_page_info():
+    resp = {
+        "status": "Accepted",
+        "body": {"data": {"features": [{"id": 1}], "pageInfo": {"currentPage": 1, "lastPage": 1}}},
+    }
+    shaped = feature_rows(resp, limit=10)
+    assert "pageInfo" not in shaped

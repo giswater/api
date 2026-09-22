@@ -8,6 +8,7 @@ or (at your option) any later version.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated, Literal
 
 from fastmcp.exceptions import ToolError
@@ -15,8 +16,10 @@ from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DEFAULT_LIMIT, SchemaName, clamp_limit, tool
-from app.mcp.shaping import feature_rows, one_row, page_total, shape_feature, unwrap
+from app.mcp.shaping import feature_rows, list_payload, one_row, page_total, shape_feature, unwrap
 from app.schemas.features.feature_models import FeatureType
+
+logger = logging.getLogger(__name__)
 
 _FEATURE_PATH = {
     "node": "nodes",
@@ -54,6 +57,11 @@ _FEATURE_TABLES = {
     "ve_link": "link",
 }
 
+_ZOOM_RATIO_DESC = (
+    "Map zoom ratio passed to Giswater (not a snapping radius in CRS units). "
+    "Feature precedence at the click: Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
+)
+
 
 def _drop_none(values: dict) -> dict:
     return {k: v for k, v in values.items() if v is not None}
@@ -84,6 +92,13 @@ def _search_hit(*, section: str, table: str, feature_type: str | None, id_: obje
     }
 
 
+def _first_present(*values):
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 async def _code_lookups(api: TenantApi, schema: str, text: str) -> list[dict]:
     """Exact hydrometer-code and connec customer_code hits. getsearch indexes neither.
 
@@ -102,7 +117,7 @@ async def _code_lookups(api: TenantApi, schema: str, text: str) -> list[dict]:
                 _search_hit(section="hydrometer", table="v_hydrometer", feature_type=None, id_=code, label=code)
             )
     except Exception:
-        pass
+        logger.debug("search hydrometer lookup failed for %r", text, exc_info=True)
     try:
         raw = await api.get("/features/connecs", schema=schema, params={"customer_code": text, "limit": 20})
         for row in unwrap(raw).get("features") or []:
@@ -117,11 +132,11 @@ async def _code_lookups(api: TenantApi, schema: str, text: str) -> list[dict]:
                     table="ve_connec",
                     feature_type="connec",
                     id_=connec_id,
-                    label=row.get("customer_code") or connec_id,
+                    label=_first_present(row.get("customer_code"), connec_id),
                 )
             )
     except Exception:
-        pass
+        logger.debug("search customer_code lookup failed for %r", text, exc_info=True)
     return extras
 
 
@@ -162,12 +177,16 @@ async def find_features(
         Field(description="id = identifiers only; summary = 6–8 locator fields (default); full = compact row"),
     ] = "summary",
     count_only: Annotated[bool, Field(description="Return the exact match count without rows")] = False,
+    include_total: Annotated[
+        bool, Field(description="Fetch the exact match total (extra request). Implied by count_only.")
+    ] = False,
 ) -> dict:
     """Find network features by typed filters and optional bbox.
 
     Returns identifiers, coordinates and counts — not a full attribute dump.
     Use ``get_feature`` for one row's attributes. ``fields``: id | summary (default) | full.
-    Shared filters (dma_id, sector_id, expl_id) are echoed once at the top level.
+    Non-null filters are echoed at the top level. ``total`` is omitted unless
+    ``count_only`` or ``include_total`` (the latter costs a second request).
     """
     await _reject_gully_on_ws(api, schema, feature_type)
     limit = clamp_limit(limit)
@@ -201,24 +220,29 @@ async def find_features(
     params = _drop_none({**typed, "orderBy": order_by, "orderType": order_type, "limit": limit})
     if None not in bbox_vals:
         params["coordinates"] = json.dumps({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
-    echoed = _drop_none({"dma_id": dma_id, "sector_id": sector_id, "expl_id": expl_id})
+    echoed = _drop_none(typed)
+    if None not in bbox_vals:
+        echoed["bbox"] = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
 
     async def _total() -> int:
         return page_total(await api.get(path, schema=schema, params={**params, "limit": 1}))
 
     if count_only:
         total = await _total()
-        return {"items": [], "count": total, "total": total, "truncated": False, "filters": echoed}
+        out: dict = {"items": [], "count": total, "total": total, "truncated": False}
+        if echoed:
+            out["filters"] = echoed
+        return out
     shaped = feature_rows(await api.get(path, schema=schema, params=params), limit=limit)
     items = [shape_feature(item, feature_type, fields) for item in shaped["items"]]
-    total = await _total() if shaped["truncated"] else len(items)
-    return {
-        "items": items,
-        "count": len(items),
-        "truncated": shaped["truncated"],
-        "total": total,
-        "filters": echoed,
-    }
+    out = {"items": items, "count": len(items), "truncated": shaped["truncated"]}
+    if include_total:
+        total = await _total() if shaped["truncated"] else len(items)
+        out["total"] = total
+        out["truncated"] = total > len(items)
+    if echoed:
+        out["filters"] = echoed
+    return out
 
 
 @tool(feature="api_features", read_only=True)
@@ -259,24 +283,22 @@ async def search(
     for section in data.get("searchResults") or []:
         table = section.get("tableName")
         feature_type = _FEATURE_TABLES.get(table) if isinstance(table, str) else None
+        section_name = feature_type or section.get("section") or section.get("alias")
         for value in section.get("values") or []:
             items.append(
                 {
-                    "section": section.get("section") or section.get("alias"),
+                    "section": section_name,
                     "table": table,
                     "feature_type": feature_type,
-                    "id": value.get("value") or value.get("key"),
-                    "label": value.get("displayName") or value.get("value"),
+                    "id": _first_present(value.get("value"), value.get("key")),
+                    "label": _first_present(value.get("displayName"), value.get("value")),
                 }
             )
-    # Address-like strings skip the extra lookups; codes like H-12345 do not.
     if text and not any(ch.isspace() for ch in text):
         extras = await _code_lookups(api, schema, text)
         seen = {(item.get("table"), item.get("id")) for item in extras}
         items = extras + [item for item in items if (item.get("table"), item.get("id")) not in seen]
-    truncated = len(items) > limit
-    items = items[:limit]
-    return {"items": items, "count": len(items), "truncated": truncated}
+    return list_payload(items, limit=limit, total=len(items), compact=False)
 
 
 @tool(feature="api_basic", read_only=True)
@@ -286,20 +308,18 @@ async def get_feature_at_point(
     x: Annotated[float, Field(description="X coordinate in the project CRS (not WGS84)")],
     y: Annotated[float, Field(description="Y coordinate in the project CRS (not WGS84)")],
     epsg: Annotated[int | None, Field(description="Project EPSG; omit to use the schema EPSG")] = None,
-    zoom_ratio: Annotated[
-        float,
-        Field(
-            description=(
-                "Snapping radius in CRS units. Determines which feature wins: "
-                "Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
-            )
-        ),
-    ] = 1000,
+    zoom_ratio: Annotated[float, Field(description=_ZOOM_RATIO_DESC)] = 1000,
+    fields: Annotated[
+        Literal["id", "summary", "full"],
+        Field(description="id = identifiers only; summary = locator fields (default); full = compact row"),
+    ] = "summary",
 ) -> dict:
     """Identify the network feature at project-CRS coordinates (not WGS84 lat/lon).
 
-    Resolves id and type at the click, then returns the same compact row as
-    ``get_feature``. ``zoom_ratio`` is a snapping radius (default 1000).
+    Resolves id and type at the click, then returns a ``find_features``-style row
+    plus ``feature_id`` / ``feature_type`` / ``table``. ``zoom_ratio`` is a map
+    zoom (default 1000), not a snapping radius; precedence is Connec/Gully/Node
+    > Link/Arc > Polygons.
     """
     epsg = await api.resolve_epsg(schema, epsg)
     raw = await api.get(
@@ -316,4 +336,6 @@ async def get_feature_at_point(
     if not feature_id or feature_type not in _FEATURE_PATH:
         return header
     row = one_row(await api.get(f"/features/{_FEATURE_PATH[feature_type]}/{feature_id}", schema=schema))
-    return {**header, **row}
+    if fields == "full":
+        return {**header, **row}
+    return {**header, **shape_feature(row, feature_type, fields)}

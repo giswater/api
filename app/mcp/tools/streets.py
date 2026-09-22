@@ -11,15 +11,7 @@ from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DEFAULT_LIMIT, SchemaName, clamp_limit, tool
-from app.mcp.shaping import unwrap
-
-
-def _list_payload(items: list, limit: int, extra: dict | None = None) -> dict:
-    truncated = len(items) >= limit
-    out = {"items": items, "count": len(items), "truncated": truncated}
-    if extra:
-        out.update(extra)
-    return out
+from app.mcp.shaping import list_payload, unwrap
 
 
 @tool(feature="api_basic", read_only=True)
@@ -34,9 +26,8 @@ async def list_streets(
     Example: list_streets("Salvador Espriu") → list_street_arcs("1-10220C") → create_mincut(arc_id=132).
     """
     limit = clamp_limit(limit)
-    raw = await api.get("/streets", schema=schema, params={"q": q, "limit": limit})
-    data = unwrap(raw)
-    return _list_payload(list(data.get("streets") or []), limit)
+    data = unwrap(await api.get("/streets", schema=schema, params={"q": q, "limit": limit}))
+    return list_payload(list(data.get("streets") or []), limit=limit)
 
 
 @tool(feature="api_basic", read_only=True)
@@ -55,7 +46,6 @@ async def list_street_arcs(
     params: dict = {"limit": limit, "bufferMeters": buffer_meters}
     if house_number is not None:
         params["houseNumber"] = house_number
-    raw = await api.get(f"/streets/{street_id}/arcs", schema=schema, params=params)
-    data = unwrap(raw)
+    data = unwrap(await api.get(f"/streets/{street_id}/arcs", schema=schema, params=params))
     extra = {"street": data["street"]} if data.get("street") else None
-    return _list_payload(list(data.get("arcs") or []), limit, extra)
+    return list_payload(list(data.get("arcs") or []), limit=limit, extra=extra)

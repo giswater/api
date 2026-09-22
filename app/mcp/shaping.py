@@ -16,6 +16,14 @@ from app.schemas.features.feature_models import FEATURE_ID_MAP
 _ID_KEYS = ("node_id", "arc_id", "connec_id", "gully_id", "link_id", "valve_id", "feature_id", "id")
 _DROP_EXACT = {"svg", "legend", "stylesheet"}
 _DROP_SUFFIXES = ("_style", "_stylesheet", "_visibility")
+_GEOM_KEYS = frozenset({"geometry", "the_geom", "thegeom"})
+_REDUNDANT_COORD_KEYS = frozenset({"lat", "long", "xcoord", "ycoord"})
+DMA_ALIASES = {
+    "dmaId": "dma_id",
+    "dmaName": "name",
+    "explId": "expl_id",
+    "macroDmaId": "macrodma_id",
+}
 
 
 def failed_text(resp: dict | None) -> str | None:
@@ -43,13 +51,6 @@ def unwrap(resp: dict) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _truncate(items: list, limit: int) -> tuple[list, bool]:
-    # Client-truncated: REST returned the full list; MCP slices. `>` is exact.
-    if len(items) <= limit:
-        return items, False
-    return items[:limit], True
-
-
 def _drop_compact_key(key: str) -> bool:
     lowered = key.lower()
     if lowered in _DROP_EXACT:
@@ -71,18 +72,96 @@ def compact_row(obj: Any) -> Any:
     return out
 
 
+def rename_keys(obj: Any, aliases: dict[str, str]) -> Any:
+    """Rename top-level keys. Unknown keys are kept."""
+    if not isinstance(obj, dict):
+        return obj
+    return {aliases.get(key, key): value for key, value in obj.items()}
+
+
+def _point_xy(value: Any) -> tuple[float, float] | None:
+    if not isinstance(value, dict):
+        return None
+    if str(value.get("type") or "").lower() == "point":
+        coords = value.get("coordinates")
+        if isinstance(coords, (list, tuple)) and len(coords) >= 2 and isinstance(coords[0], (int, float)):
+            return float(coords[0]), float(coords[1])
+        return None
+    nested = value.get("geometry")
+    if isinstance(nested, dict):
+        return _point_xy(nested)
+    coords = value.get("coordinates")
+    if isinstance(coords, (list, tuple)) and len(coords) >= 2 and isinstance(coords[0], (int, float)):
+        return float(coords[0]), float(coords[1])
+    return None
+
+
+def drop_geometry(obj: Any) -> Any:
+    """Drop GeoJSON / ``the_geom`` blobs. Point geometries become ``x`` / ``y`` first."""
+    if isinstance(obj, list):
+        return [drop_geometry(item) for item in obj]
+    if not isinstance(obj, dict):
+        return obj
+    xy = None
+    out: dict[str, Any] = {}
+    for key, value in obj.items():
+        if str(key).lower() in _GEOM_KEYS:
+            if xy is None:
+                xy = _point_xy(value)
+            continue
+        out[key] = drop_geometry(value) if isinstance(value, (dict, list)) else value
+    if xy:
+        if out.get("x") is None:
+            out["x"] = xy[0]
+        if out.get("y") is None:
+            out["y"] = xy[1]
+    return out
+
+
+def drop_redundant_coords(row: Any) -> Any:
+    """Drop ``lat`` / ``long`` / ``xcoord`` / ``ycoord`` when ``coordinates`` is present."""
+    if not isinstance(row, dict):
+        return row
+    coords = row.get("coordinates")
+    if not isinstance(coords, dict):
+        return row
+    if coords.get("x") is None and coords.get("y") is None:
+        return row
+    return {key: value for key, value in row.items() if key not in _REDUNDANT_COORD_KEYS}
+
+
+def list_payload(
+    items: list | None,
+    *,
+    limit: int,
+    total: int | None = None,
+    extra: dict | None = None,
+    compact: bool = True,
+    aliases: dict[str, str] | None = None,
+) -> dict:
+    """Unify list tool envelopes: ``items``, ``count`` (page size), optional ``total``, ``truncated``."""
+    rows = list(items or [])
+    sliced = rows[:limit]
+    truncated = total > len(sliced) if total is not None else len(sliced) >= limit
+    shaped: list[Any] = []
+    for item in sliced:
+        row = rename_keys(item, aliases) if aliases else item
+        row = drop_geometry(row)
+        if compact:
+            row = compact_row(row)
+        shaped.append(row)
+    out: dict[str, Any] = {"items": shaped, "count": len(shaped), "truncated": truncated}
+    if total is not None:
+        out["total"] = total
+    if extra:
+        out.update(extra)
+    return out
+
+
 def feature_rows(resp: dict, limit: int, *, compact: bool = True) -> dict:
-    """Shape ``/features/*`` list payloads (``data.features``)."""
-    data = unwrap(resp)
-    items = list(data.get("features") or [])
-    page = data.get("pageInfo") or {}
-    # Server-limited: REST applied LIMIT. lastPage is floor(total/limit), so a
-    # full page is the only signal that more rows may exist.
-    truncated = len(items) >= limit
-    sliced = items[:limit]
-    if compact:
-        sliced = [compact_row(item) for item in sliced]
-    return {"items": sliced, "count": len(sliced), "truncated": truncated, "pageInfo": page or None}
+    """Shape ``/features/*`` list payloads (``data.features``). Server-limited: no ``total``."""
+    items = list(unwrap(resp).get("features") or [])
+    return list_payload(items, limit=limit, compact=compact)
 
 
 def page_total(resp: dict) -> int:
@@ -124,7 +203,7 @@ def shape_feature(row: dict, feature_type: str, fields: Literal["id", "summary",
         value = row.get(id_key)
         return {id_key: value} if value is not None else {}
     if fields == "full":
-        return compact_row(row)
+        return drop_redundant_coords(compact_row(drop_geometry(row)))
     flat = dict(row)
     coords = row.get("coordinates")
     if isinstance(coords, dict):
@@ -132,18 +211,15 @@ def shape_feature(row: dict, feature_type: str, fields: Literal["id", "summary",
             flat["x"] = coords["x"]
         if flat.get("y") is None and coords.get("y") is not None:
             flat["y"] = coords["y"]
-    compacted = compact_row(flat)
+    compacted = compact_row(drop_geometry(flat))
     keep = SUMMARY_KEEP[feature_type]
     return {k: v for k, v in compacted.items() if k in keep}
 
 
 def list_rows(resp: dict, limit: int) -> dict:
-    """Shape getlist-backed payloads (``data.fields``)."""
-    data = unwrap(resp)
-    items = list(data.get("fields") or [])
-    sliced, truncated = _truncate(items, limit)
-    sliced = [compact_row(item) for item in sliced]
-    return {"items": sliced, "count": len(sliced), "truncated": truncated}
+    """Shape getlist-backed payloads (``data.fields``). REST returns the full list; MCP slices."""
+    items = list(unwrap(resp).get("fields") or [])
+    return list_payload(items, limit=limit, total=len(items))
 
 
 def one_row(resp: dict, *, compact: bool = True) -> dict:
@@ -151,7 +227,9 @@ def one_row(resp: dict, *, compact: bool = True) -> dict:
     data = unwrap(resp)
     feature = data.get("feature")
     row = feature if isinstance(feature, dict) else data
-    return compact_row(row) if compact else row
+    if compact:
+        return drop_redundant_coords(compact_row(drop_geometry(row)))
+    return row
 
 
 def fields_to_dict(fields: list | None, *, skip_hidden: bool = False, drop_nulls: bool = False) -> dict:
@@ -172,6 +250,17 @@ def fields_to_dict(fields: list | None, *, skip_hidden: bool = False, drop_nulls
     return out
 
 
+def as_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _walk_coords(coords: Any, xs: list[float], ys: list[float]) -> None:
     if not isinstance(coords, (list, tuple)) or not coords:
         return
@@ -184,10 +273,13 @@ def _walk_coords(coords: Any, xs: list[float], ys: list[float]) -> None:
         _walk_coords(item, xs, ys)
 
 
-def fc_summary(fc: dict | None, id_key: str | None = None) -> dict:
+def fc_summary(fc: dict | None, id_key: str | None = None, *, with_bbox: bool = True) -> dict:
     """Summarise a GeoJSON FeatureCollection to counts, ids and bbox."""
     if not isinstance(fc, dict):
-        return {"count": 0, "ids": [], "bbox": None}
+        result: dict[str, Any] = {"count": 0, "ids": []}
+        if with_bbox:
+            result["bbox"] = None
+        return result
     features = fc.get("features") or []
     ids: list[Any] = []
     xs: list[float] = []
@@ -205,5 +297,7 @@ def fc_summary(fc: dict | None, id_key: str | None = None) -> dict:
                     break
         geom = feat.get("geometry") or {}
         _walk_coords(geom.get("coordinates"), xs, ys)
-    bbox = [min(xs), min(ys), max(xs), max(ys)] if xs and ys else None
-    return {"count": len(features), "ids": ids, "bbox": bbox}
+    result = {"count": len(features), "ids": ids}
+    if with_bbox:
+        result["bbox"] = [min(xs), min(ys), max(xs), max(ys)] if xs and ys else None
+    return result

@@ -11,7 +11,7 @@ from pydantic import Field
 
 from app.mcp.client import TenantApi
 from app.mcp.registry import DENSE_LIMIT, SchemaName, clamp_limit, tool
-from app.mcp.shaping import compact_row, unwrap
+from app.mcp.shaping import list_payload, unwrap
 
 
 @tool(feature="api_crm", read_only=True)
@@ -24,9 +24,14 @@ async def list_hydrometers(
     mincut_id: Annotated[int | None, Field(description="Filter by mincut id (affected hydrometers)")] = None,
     customer_code: Annotated[str | None, Field(description="Filter by connec customer code")] = None,
     limit: Annotated[int, Field(description="Max rows requested from the API (1–500)")] = DENSE_LIMIT,
-    compact: Annotated[bool, Field(description="Drop nulls and QGIS style fields")] = True,
 ) -> dict:
-    """List hydrometers, optionally filtered by code, connec_id, dma_id, mincut_id or customer_code."""
+    """List hydrometers, optionally filtered by code, connec_id, dma_id, mincut_id or customer_code.
+
+    ``count`` is the page size; ``total`` is the match count. Hydrometers whose
+    customer code does not join a connec have ``dma_id`` null and are invisible
+    to a ``dma_id`` filter — per-DMA totals will not sum to the unfiltered total.
+    Present on both WS and UD sample schemas (UD rows may carry ``is_waterbal``).
+    """
     limit = clamp_limit(limit)
     params = {
         k: v
@@ -40,14 +45,8 @@ async def list_hydrometers(
         }.items()
         if v is not None
     }
-    raw = await api.get("/crm/hydrometers", schema=schema, params=params)
-    data = unwrap(raw)
+    data = unwrap(await api.get("/crm/hydrometers", schema=schema, params=params))
     items = list(data.get("hydrometers") or [])
-    if compact:
-        items = [compact_row(item) for item in items]
-    total = data.get("count")
-    # Server-limited: REST applied LIMIT, so a full page means there may be more.
-    truncated = len(items) >= limit
-    if isinstance(total, int) and total > len(items):
-        truncated = True
-    return {"items": items, "count": total if isinstance(total, int) else len(items), "truncated": truncated}
+    rest_total = data.get("count")
+    total = rest_total if isinstance(rest_total, int) else None
+    return list_payload(items, limit=limit, total=total)
