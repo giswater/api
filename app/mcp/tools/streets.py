@@ -14,6 +14,12 @@ from app.mcp.registry import DEFAULT_LIMIT, SchemaName, clamp_limit, tool
 from app.mcp.shaping import list_payload, unwrap
 
 
+def _listed(rows: list, limit: int, truncated: bool | None, extra: dict | None = None) -> dict:
+    if isinstance(truncated, bool):
+        return list_payload(rows, limit=limit, truncated=truncated, extra=extra)
+    return list_payload(rows, limit=limit, extra=extra)
+
+
 @tool(feature="api_basic", read_only=True)
 async def list_streets(
     api: TenantApi,
@@ -27,7 +33,7 @@ async def list_streets(
     """
     limit = clamp_limit(limit)
     data = unwrap(await api.get("/streets", schema=schema, params={"q": q, "limit": limit}))
-    return list_payload(list(data.get("streets") or []), limit=limit)
+    return _listed(list(data.get("streets") or []), limit, data.get("truncated"))
 
 
 @tool(feature="api_basic", read_only=True)
@@ -48,4 +54,4 @@ async def list_street_arcs(
         params["houseNumber"] = house_number
     data = unwrap(await api.get(f"/streets/{street_id}/arcs", schema=schema, params=params))
     extra = {"street": data["street"]} if data.get("street") else None
-    return list_payload(list(data.get("arcs") or []), limit=limit, extra=extra)
+    return _listed(list(data.get("arcs") or []), limit, data.get("truncated"), extra)

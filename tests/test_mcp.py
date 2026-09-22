@@ -410,6 +410,36 @@ def test_mcp_list_streets(client, default_params):
     assert arcs_result.get("isError") in (None, False)
     arcs = _tool_data(arcs_body)
     assert "items" in arcs
+    assert arcs["count"] == len(arcs.get("items") or [])
+    assert isinstance(arcs.get("truncated"), bool)
+
+    query = items[0].get("name") or ""
+    if len(query) < 2:
+        query = "ca"
+    wide_resp, wide_body = _call_tool(
+        client, "list_streets", {"schema": default_params["schema"], "q": query, "limit": 500}
+    )
+    assert wide_resp.status_code == 200, wide_resp.text
+    wide = _tool_data(wide_body)
+    total = wide.get("count") or 0
+    if wide.get("truncated") or total < 1:
+        return
+    exact_resp, exact_body = _call_tool(
+        client, "list_streets", {"schema": default_params["schema"], "q": query, "limit": total}
+    )
+    assert exact_resp.status_code == 200, exact_resp.text
+    exact = _tool_data(exact_body)
+    assert exact["truncated"] is False
+    assert exact["count"] == total
+    if total < 2:
+        return
+    short_resp, short_body = _call_tool(
+        client, "list_streets", {"schema": default_params["schema"], "q": query, "limit": total - 1}
+    )
+    assert short_resp.status_code == 200, short_resp.text
+    short = _tool_data(short_body)
+    assert short["truncated"] is True
+    assert short["count"] == total - 1
 
 
 def test_mcp_find_features_compact(client, default_params):

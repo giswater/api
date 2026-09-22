@@ -135,14 +135,20 @@ def list_payload(
     *,
     limit: int,
     total: int | None = None,
+    truncated: bool | None = None,
     extra: dict | None = None,
     compact: bool = True,
     aliases: dict[str, str] | None = None,
 ) -> dict:
-    """Unify list tool envelopes: ``items``, ``count`` (page size), optional ``total``, ``truncated``."""
+    """Unify list tool envelopes: ``items``, ``count`` (page size), optional ``total``, ``truncated``.
+
+    Pass ``truncated`` when the caller already knows (for example a LIMIT+1 probe). Otherwise
+    ``total`` wins, and a full page with no total is treated as truncated.
+    """
     rows = list(items or [])
     sliced = rows[:limit]
-    truncated = total > len(sliced) if total is not None else len(sliced) >= limit
+    if truncated is None:
+        truncated = total > len(sliced) if total is not None else len(sliced) >= limit
     shaped: list[Any] = []
     for item in sliced:
         row = rename_keys(item, aliases) if aliases else item

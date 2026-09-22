@@ -33,6 +33,13 @@ def _sql_col(arc_cols: set[str], name: str, expr: str | None = None) -> str:
     return expr or f"arc.{name}"
 
 
+def _cap_page(rows: list, limit: int) -> tuple[list, bool]:
+    """Drop the LIMIT+1 probe row. ``truncated`` is true only when that row existed."""
+    if len(rows) > limit:
+        return rows[:limit], True
+    return rows, False
+
+
 class StreetsService:
     def __init__(self, ctx: ServiceContext):
         self.ctx = ctx.with_logger(__name__)
@@ -92,10 +99,13 @@ class StreetsService:
         params: list = [pattern]
         if views["muni"]:
             params.append(pattern)
-        params.append(limit)
+        params.append(limit + 1)
         streets = [_drop_none(dict(row)) for row in await self._execute(sql_query, tuple(params))]
+        streets, truncated = _cap_page(streets, limit)
         return await accepted_data_response(
-            self.ctx, "Fetched streets successfully", {"streets": streets, "count": len(streets)}
+            self.ctx,
+            "Fetched streets successfully",
+            {"streets": streets, "count": len(streets), "truncated": truncated},
         )
 
     async def list_street_arcs(
@@ -111,12 +121,13 @@ class StreetsService:
             raise LookupError(f"Street '{street_id}' not found")
         street = _drop_none(dict(street_rows[0]))
         arc_cols = await self._arc_columns()
-        sql_query, params = self._arcs_sql(views, arc_cols, street_id, house_number, buffer_meters, limit)
+        sql_query, params = self._arcs_sql(views, arc_cols, street_id, house_number, buffer_meters, limit + 1)
         arcs = [_drop_none(dict(row)) for row in await self._execute(sql_query, params)]
+        arcs, truncated = _cap_page(arcs, limit)
         return await accepted_data_response(
             self.ctx,
             "Fetched street arcs successfully",
-            {"street": street, "arcs": arcs, "count": len(arcs)},
+            {"street": street, "arcs": arcs, "count": len(arcs), "truncated": truncated},
         )
 
     async def _street_row(self, views: dict[str, str | None], street_id: str) -> list[dict]:

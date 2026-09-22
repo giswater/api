@@ -43,6 +43,7 @@ class StreetArc(BaseModel):
 class ListStreetsData(BaseModel):
     streets: List[Street] = Field(default_factory=list, description="Matching streets")
     count: int = Field(..., description="Number of streets returned")
+    truncated: bool = Field(False, description="True when more streets match than limit")
 
 
 class ListStreetsBody(Body[ListStreetsData]):
@@ -58,6 +59,7 @@ class ListStreetArcsData(BaseModel):
     street: Street = Field(..., description="Street row")
     arcs: List[StreetArc] = Field(default_factory=list, description="Candidate arcs")
     count: int = Field(..., description="Number of arcs returned")
+    truncated: bool = Field(False, description="True when more arcs match than limit")
 
 
 class ListStreetArcsBody(Body[ListStreetArcsData]):

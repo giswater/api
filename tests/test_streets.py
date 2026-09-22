@@ -87,6 +87,51 @@ def test_list_street_arcs_unknown_house_number(client, default_params):
     assert all("distance_m" not in a for a in ranked_arcs)
 
 
+def _assert_exact_page(fetch, full_count: int):
+    """``fetch(limit)`` returns ``body.data``. A page of size ``full_count`` is not truncated."""
+    if full_count >= 500:
+        pytest.skip("match set hits the 500 cap; cannot prove an exact page")
+    exact = fetch(full_count)
+    assert exact["truncated"] is False
+    assert exact["count"] == full_count
+    if full_count < 2:
+        return
+    short = fetch(full_count - 1)
+    assert short["truncated"] is True
+    assert short["count"] == full_count - 1
+
+
+def test_list_streets_exact_page_is_not_truncated(client, default_params):
+    assert_ready(client)
+    street = _sample_street(client, default_params)
+    token = street.get("name") or ""
+    if len(token) < 2:
+        token = street["id"][:2]
+
+    def fetch(limit: int) -> dict:
+        response = client.get(api("/streets"), params={**default_params, "q": token, "limit": limit})
+        assert response.status_code == 200, response.text
+        return (response.json().get("body") or {}).get("data") or {}
+
+    wide = fetch(500)
+    _assert_exact_page(fetch, wide["count"])
+
+
+def test_list_street_arcs_exact_page_is_not_truncated(client, default_params):
+    assert_ready(client)
+    street = _sample_street(client, default_params)
+
+    def fetch(limit: int) -> dict:
+        response = client.get(api(f"/streets/{street['id']}/arcs"), params={**default_params, "limit": limit})
+        assert response.status_code == 200, response.text
+        return (response.json().get("body") or {}).get("data") or {}
+
+    wide = fetch(500)
+    if not wide.get("arcs"):
+        pytest.skip("street has no arcs")
+    _assert_exact_page(fetch, wide["count"])
+
+
 def test_list_street_arcs_unknown_id(client, default_params):
     assert_ready(client)
     response = client.get(api("/streets/__missing__/arcs"), params=default_params)

@@ -291,6 +291,16 @@ def test_list_payload_heuristic_without_total():
     assert short["truncated"] is False
 
 
+def test_list_payload_explicit_truncated_overrides_full_page():
+    exact = list_payload([{"id": i} for i in range(5)], limit=5, truncated=False)
+    assert exact["truncated"] is False
+    assert exact["count"] == 5
+    assert "total" not in exact
+    more = list_payload([{"id": i} for i in range(5)], limit=5, truncated=True)
+    assert more["truncated"] is True
+    assert "total" not in more
+
+
 def test_drop_geometry_extracts_point_xy():
     row = drop_geometry(
         {
