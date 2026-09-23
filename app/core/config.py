@@ -148,6 +148,10 @@ class GlobalSettings:
     db_auto_migrate: bool = True
     db_migrate_timeout: float = 30.0
 
+    # MCP (per-tenant Streamable HTTP at ${API_ROOT}/v1/mcp/)
+    mcp_enabled: bool = True
+    mcp_timeout: float = 60.0
+
     # Legacy aliases (kept for the duration of the multi-tenant migration).
     @property
     def log_admin_user(self) -> str:
@@ -173,6 +177,7 @@ class TenantSettings:
     api_crm: bool = False
     api_epa: bool = False
     api_features: bool = False
+    api_mcp: bool = False
 
     # Database
     db_host: str = "localhost"
@@ -283,6 +288,8 @@ def _build_global(env: Mapping[str, str | None]) -> GlobalSettings:
         giswater_db_min_version=(env.get("GISWATER_DB_MIN_VERSION") or "4.17.0"),
         db_auto_migrate=_to_bool(env.get("DB_AUTO_MIGRATE"), True),
         db_migrate_timeout=_to_float(env.get("DB_MIGRATE_TIMEOUT"), 30.0),
+        mcp_enabled=_to_bool(env.get("MCP_ENABLED"), True),
+        mcp_timeout=_to_float(env.get("MCP_TIMEOUT"), 60.0),
     )
 
 
@@ -298,6 +305,7 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         api_crm=_to_bool(env.get("API_CRM"), False),
         api_epa=_to_bool(env.get("API_EPA"), False),
         api_features=_to_bool(env.get("API_FEATURES"), False),
+        api_mcp=_to_bool(env.get("API_MCP"), False),
         db_host=(env.get("DB_HOST") or "localhost"),
         db_port=(env.get("DB_PORT") or "5432"),
         db_name=(env.get("DB_NAME") or "postgres"),

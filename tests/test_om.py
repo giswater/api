@@ -10,8 +10,16 @@ import asyncio
 import pytest
 from psycopg import sql
 
+from app.schemas.om.mincut_models import MincutToggleParams
 from app.tenancy import state
 from tests.helpers import assert_ready, api
+
+
+def test_toggle_body_accepts_legacy_boolean():
+    assert MincutToggleParams.model_validate(False).use_psectors is False
+    assert MincutToggleParams.model_validate(True).use_psectors is True
+    assert MincutToggleParams.model_validate({"use_psectors": True}).use_psectors is True
+    assert MincutToggleParams.model_validate({}).use_psectors is False
 
 
 @pytest.mark.ws
@@ -200,6 +208,55 @@ def _delete_mincut(client, default_params, mincut_id: int):
     assert response.status_code == 200, f"Failed to delete mincut {mincut_id}: {response.text}"
 
 
+def _sample_arc_id(client, default_params) -> int:
+    listing = client.get(api("/features/arcs"), params={**default_params, "limit": 1})
+    assert listing.status_code == 200, listing.text
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
+        pytest.skip("no arcs in sample")
+    return int(features[0]["arc_id"])
+
+
+@pytest.mark.ws
+def test_create_mincut_requires_arc_or_coordinates(client, default_params):
+    assert_ready(client)
+    response = client.post(api("/om/mincuts"), params=default_params, json={"use_psectors": False})
+    assert response.status_code == 422
+
+
+@pytest.mark.ws
+def test_create_mincut_rejects_arc_and_coordinates(client, default_params):
+    assert_ready(client)
+    response = client.post(
+        api("/om/mincuts"),
+        params=default_params,
+        json={"arcId": 1, "coordinates": _MINCUT_COORDINATES, "use_psectors": False},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.ws
+@pytest.mark.destructive
+def test_create_mincut_from_arc_id(client, default_params):
+    assert_ready(client)
+    _ensure_current_user_in_cat_users(default_params["schema"])
+    arc_id = _sample_arc_id(client, default_params)
+    payload = {
+        "arcId": arc_id,
+        "plan": {"mincut_type": "Demo", "anl_cause": "Accidental", "anl_descript": "arcId mincut"},
+        "use_psectors": False,
+    }
+    response = client.post(api("/om/mincuts"), params=default_params, json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "Accepted"
+    mincut_id = data["body"]["data"]["mincutId"]
+    try:
+        assert mincut_id is not None
+    finally:
+        _delete_mincut(client, default_params, mincut_id)
+
+
 # ---------------------------------------------------------------------------
 # Mincut lifecycle test
 # ---------------------------------------------------------------------------
@@ -325,6 +382,27 @@ def test_valve_toggle_status(client, default_params):
         _delete_mincut(client, default_params, mincut_id)
 
 
+@pytest.mark.ws
+@pytest.mark.destructive
+def test_valve_toggle_accepts_legacy_boolean_body(client, default_params):
+    """Scalar boolean body (pre-object contract) must not 422."""
+    assert_ready(client)
+
+    mincut_id = _create_mincut(client, default_params)
+    try:
+        response = client.get(api(f"/om/mincuts/{mincut_id}/valves"), params=default_params)
+        assert response.status_code == 200
+        features = response.json().get("body", {}).get("data", {}).get("features", [])
+        valve_id = features[0]["node_id"] if features else 1
+        path = api(f"/om/mincuts/{mincut_id}/valves/{valve_id}/toggle-unaccess")
+        scalar = client.post(path, params=default_params, json=False)
+        assert scalar.status_code != 422, scalar.text
+        obj = client.post(path, params=default_params, json={"use_psectors": False})
+        assert obj.status_code != 422, obj.text
+    finally:
+        _delete_mincut(client, default_params, mincut_id)
+
+
 # ---------------------------------------------------------------------------
 # Water Balance
 # ---------------------------------------------------------------------------
@@ -340,3 +418,19 @@ def test_get_waterbalance(client, default_params):
     data = response.json()
     assert data["status"] == "Accepted"
     assert "body" in data
+
+
+@pytest.mark.ws
+def test_get_waterbalance_filter_dma_id(client, default_params):
+    assert_ready(client)
+    listed = client.get(api("/om/waterbalance"), params=default_params)
+    assert listed.status_code == 200, listed.text
+    rows = ((listed.json().get("body") or {}).get("data") or {}).get("waterbalance") or []
+    if not rows:
+        pytest.skip("no waterbalance rows")
+    dma_id = rows[0].get("dma_id")
+    response = client.get(api("/om/waterbalance"), params={**default_params, "dma_id": dma_id})
+    assert response.status_code == 200, response.text
+    filtered = ((response.json().get("body") or {}).get("data") or {}).get("waterbalance") or []
+    assert filtered
+    assert all(row.get("dma_id") == dma_id for row in filtered)

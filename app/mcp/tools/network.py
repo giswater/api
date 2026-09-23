@@ -1,0 +1,167 @@
+"""
+Copyright © 2026 by BGEO. All rights reserved.
+The program is free software: you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version.
+"""
+
+import json
+from typing import Annotated, Any, Literal
+
+from fastmcp.exceptions import ToolError
+from pydantic import Field
+
+from app.mcp.client import TenantApi
+from app.mcp.registry import SchemaName, tool
+from app.mcp.shaping import compact_row, fc_summary, unwrap
+
+_POINT_GROUPS = {"NODE": "node_ids", "CONNEC": "connec_ids", "GULLY": "gully_ids"}
+_ZOOM_RATIO_DESC = (
+    "Map zoom ratio passed to Giswater (not a snapping radius in CRS units). "
+    "Feature precedence at the click: Connec/Gully/Node > Link/Arc > Polygons. Default 1000."
+)
+
+
+def _flow_point_ids(fc: dict | None) -> dict[str, list]:
+    grouped = {"node_ids": [], "connec_ids": [], "gully_ids": []}
+    if not isinstance(fc, dict):
+        return grouped
+    for feat in fc.get("features") or []:
+        if not isinstance(feat, dict):
+            continue
+        props = feat.get("properties") or {}
+        key = _POINT_GROUPS.get(str(props.get("feature_type") or "").upper())
+        if not key:
+            continue
+        fid = props.get("feature_id")
+        if fid is None:
+            fid = next((props[k] for k in ("node_id", "connec_id", "gully_id", "id") if k in props), None)
+        if fid is not None:
+            grouped[key].append(fid)
+    return grouped
+
+
+def _code_from_label(label: Any) -> Any:
+    if not isinstance(label, str) or not label.strip():
+        return None
+    try:
+        parsed = json.loads(label)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict):
+        return parsed.get("code")
+    return None
+
+
+def _profile_nodes(rows: list | None) -> list:
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        item = dict(row)
+        item.pop("descript", None)
+        out.append(compact_row(item))
+    return out
+
+
+def _profile_terrain(rows: list | None) -> list:
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        item = dict(row)
+        code = _code_from_label(item.pop("label_n1", None))
+        if code is not None and item.get("code") is None:
+            item["code"] = code
+        out.append(compact_row(item))
+    return out
+
+
+def _profile_arcs(rows: list | None) -> list:
+    return [compact_row(row) if isinstance(row, dict) else row for row in rows or []]
+
+
+@tool(feature="api_flow", read_only=True, project_types={"UD"})
+async def trace_flow(
+    api: TenantApi,
+    schema: SchemaName,
+    direction: Annotated[Literal["upstream", "downstream"], Field(description="Trace direction")],
+    node_id: Annotated[int | None, Field(description="Start node id (alternative to x/y/epsg)")] = None,
+    x: Annotated[float | None, Field(description="X in project CRS if node_id is omitted")] = None,
+    y: Annotated[float | None, Field(description="Y in project CRS if node_id is omitted")] = None,
+    epsg: Annotated[int | None, Field(description="Project EPSG if using x/y (not 4326)")] = None,
+    zoom_ratio: Annotated[float, Field(description=_ZOOM_RATIO_DESC)] = 1000,
+    include_geometry: Annotated[bool, Field(description="Include GeoJSON point/line collections")] = False,
+) -> dict:
+    """Trace flow upstream or downstream from a node id or project-CRS coordinates.
+
+    Coordinates must be in the project EPSG (not WGS84 lat/lon). Provide either
+    ``node_id`` or ``x``+``y``. ``epsg`` is optional and must match the schema.
+    """
+    body: dict = {"direction": direction}
+    if node_id is not None:
+        body["node_id"] = node_id
+    elif None not in (x, y):
+        epsg = await api.resolve_epsg(schema, epsg)
+        body["coordinates"] = {"xcoord": x, "ycoord": y, "epsg": epsg, "zoomRatio": zoom_ratio}
+    else:
+        raise ToolError("Provide node_id, or x + y (project CRS, not lat/lon)")
+    raw = await api.post("/om/flow", schema=schema, json=body)
+    data = unwrap(raw)
+    points = _flow_point_ids(data.get("point"))
+    line = fc_summary(data.get("line"), "arc_id", with_bbox=False)
+    result = {
+        "init_node": data.get("initPoint"),
+        **points,
+        "arc_ids": line["ids"],
+        "counts": {
+            "nodes": len(points["node_ids"]),
+            "connecs": len(points["connec_ids"]),
+            "gullies": len(points["gully_ids"]),
+            "arcs": line["count"],
+        },
+    }
+    if include_geometry:
+        result["point"] = data.get("point")
+        result["line"] = data.get("line")
+    return result
+
+
+@tool(feature="api_profile", read_only=True)
+async def get_profile(
+    api: TenantApi,
+    schema: SchemaName,
+    start_node_id: Annotated[int, Field(description="Start node id")],
+    end_node_id: Annotated[int, Field(description="End node id")],
+    intermediate_node_ids: Annotated[list[int] | None, Field(description="Optional nodes along the path")] = None,
+    include_geometry: Annotated[bool, Field(description="Include GeoJSON point/line/polygon")] = False,
+) -> dict:
+    """Longitudinal profile between two nodes: node / terrain / arc arrays (no stylesheet)."""
+    body = {
+        "initial_node_id": start_node_id,
+        "final_node_id": end_node_id,
+        "middle_features": intermediate_node_ids,
+        "links_distance": 1,
+        "scale_eh": 1000,
+        "scale_ev": 1000,
+    }
+    raw = await api.post("/om/profiles", schema=schema, json=body)
+    data = unwrap(raw)
+    result: dict[str, Any] = {
+        "node": _profile_nodes(data.get("node")),
+        "terrain": _profile_terrain(data.get("terrain")),
+        "arc": _profile_arcs(data.get("arc")),
+    }
+    extension = data.get("extension")
+    initpoint = data.get("initpoint")
+    if extension:
+        result["extension"] = extension
+    if initpoint:
+        result["initpoint"] = initpoint
+    if include_geometry:
+        result["point"] = compact_row(data.get("point"))
+        result["line"] = compact_row(data.get("line"))
+        result["polygon"] = compact_row(data.get("polygon"))
+    return result

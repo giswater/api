@@ -19,7 +19,11 @@ class HydrometerBase(BaseModel):
 
     code: str = Field(..., description="Hydrometer code (from CRM)")
     hydroNumber: Optional[str] = Field(None, description="Hydrometer number")
-    connecId: Optional[int] = Field(None, description="Connec ID (linked to connec_id)")
+    customerCode: Optional[str] = Field(
+        None, description="Connec customer code (maps to feature_customer_code on write)"
+    )
+    # DEPRECATED: prefer customerCode. Looked up to ve_connec.customer_code; not a function key.
+    connecId: Optional[int] = Field(None, deprecated="Prefer customerCode.")
     link: Optional[str] = Field(None, description="URL link to CRM software")
     stateId: Optional[int] = Field(None, description="State ID (catalog)")
     catalogId: Optional[int] = Field(None, description="Catalog ID")
@@ -38,22 +42,10 @@ class HydrometerCreate(HydrometerBase):
     pass
 
 
-class HydrometerUpdate(BaseModel):
+class HydrometerUpdate(HydrometerBase):
     """Model for updating hydrometers - all fields optional except code"""
 
-    code: str = Field(..., description="Hydrometer code (identifier)")
-    hydroNumber: Optional[str] = Field(None, description="Hydrometer number")
-    connecId: Optional[int] = Field(None, description="Connec ID (linked to connec_id)")
-    link: Optional[str] = Field(None, description="URL link to CRM software")
-    stateId: Optional[int] = Field(None, description="State ID (catalog)")
-    catalogId: Optional[int] = Field(None, description="Catalog ID")
-    categoryId: Optional[int] = Field(None, description="Category ID (catalog)")
-    priorityId: Optional[int] = Field(None, description="Priority ID (catalog)")
-    exploitation: Optional[int] = Field(None, description="Exploitation ID")
-    startDate: Optional[date] = Field(None, description="Start date")
-    endDate: Optional[date] = Field(None, description="End date")
-    updateDate: Optional[date] = Field(None, description="Update date")
-    shutdownDate: Optional[date] = Field(None, description="Shutdown date")
+    pass
 
 
 # Response models

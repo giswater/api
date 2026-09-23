@@ -11,18 +11,20 @@ from fastapi import APIRouter, Body, Path, Query
 
 from app.api.deps import CommonsDep, get_service_context
 from app.schemas.basic.basic_models import GetListResponse
-from app.schemas.common import CoordinatesModel
 from app.schemas.om.mincut_models import (
     MincutCancelResponse,
+    MincutCreateParams,
     MincutCreateResponse,
     MincutDeleteResponse,
     MincutDialogResponse,
+    MincutEndParams,
     MincutEndResponse,
-    MincutExecParams,
-    MincutPlanParams,
+    MincutStartParams,
     MincutStartResponse,
+    MincutToggleParams,
     MincutToggleValveStatusResponse,
     MincutToggleValveUnaccessResponse,
+    MincutUpdateParams,
     MincutUpdateResponse,
 )
 from app.services.om.mincut_service import MincutService
@@ -61,22 +63,22 @@ async def get_mincut_dialog(
 @router.post(
     "/mincuts",
     description=(
-        "This action should be used when an anomaly is detected in field that wasn't planified.\n"
-        "In this case there is no mincut created, therefore a new one will be created."
+        "Create an unplanned mincut from an arc id or a map click. Provide exactly one of arcId or coordinates."
     ),
     response_model=MincutCreateResponse,
     response_model_exclude_unset=True,
 )
 async def create_mincut(
     commons: CommonsDep,
-    coordinates: CoordinatesModel = Body(
-        ..., title="Coordinates", description="Coordinates on which the mincut will be created"
-    ),
-    plan: Optional[MincutPlanParams] = Body(None, title="Plan", description="Plan of the mincut"),
-    use_psectors: bool = Body(False, title="Use Psectors", description="Whether to use the planified network or not"),
+    payload: MincutCreateParams,
 ):
     ctx = get_service_context(commons)
-    return await MincutService(ctx).create_mincut(coordinates, plan, use_psectors)
+    return await MincutService(ctx).create_mincut(
+        coordinates=payload.coordinates,
+        arc_id=payload.arcId,
+        plan=payload.plan,
+        use_psectors=payload.use_psectors,
+    )
 
 
 @router.patch(
@@ -88,12 +90,10 @@ async def create_mincut(
 async def update_mincut(
     commons: CommonsDep,
     mincut_id: int = Path(..., title="Mincut ID", description="ID of the mincut to update", examples=[1]),
-    plan: Optional[MincutPlanParams] = Body(None, title="Plan", description="Plan parameters"),
-    exec: Optional[MincutExecParams] = Body(None, title="Execution", description="Execution parameters"),
-    use_psectors: bool = Body(False, title="Use Psectors", description="Whether to use the planified network or not"),
+    payload: MincutUpdateParams = Body(default_factory=MincutUpdateParams),
 ):
     ctx = get_service_context(commons)
-    return await MincutService(ctx).update_mincut(mincut_id, plan, exec, use_psectors)
+    return await MincutService(ctx).update_mincut(mincut_id, payload.plan, payload.exec, payload.use_psectors)
 
 
 @router.get(
@@ -115,7 +115,8 @@ async def get_valves(
     "/mincuts/{mincut_id}/valves/{valve_id}/toggle-unaccess",
     description=(
         "Toggles the unaccess status of a valve associated to a mincut."
-        "Also recalculates the mincut with the new status of the valve."
+        " Also recalculates the mincut with the new status of the valve. "
+        'Body is {"use_psectors": false}. A bare boolean is DEPRECATED and still accepted.'
     ),
     response_model=MincutToggleValveUnaccessResponse,
     response_model_exclude_unset=True,
@@ -124,15 +125,18 @@ async def valve_unaccess(
     commons: CommonsDep,
     mincut_id: int = Path(..., title="Mincut ID", description="ID of the mincut associated to the valve", examples=[1]),
     valve_id: int = Path(..., title="Node ID", description="ID of the valve to toggle unaccessible", examples=[1114]),
-    use_psectors: bool = Body(False, title="Use Psectors", description="Whether to use the planified network or not"),
+    payload: MincutToggleParams = Body(default_factory=MincutToggleParams),
 ):
     ctx = get_service_context(commons)
-    return await MincutService(ctx).valve_unaccess(mincut_id, valve_id, use_psectors)
+    return await MincutService(ctx).valve_unaccess(mincut_id, valve_id, payload.use_psectors)
 
 
 @router.post(
     "/mincuts/{mincut_id}/valves/{valve_id}/toggle-status",
-    description=("Updates the status of a valve associated to a mincut."),
+    description=(
+        "Updates the status of a valve associated to a mincut. "
+        'Body is {"use_psectors": false}. A bare boolean is DEPRECATED and still accepted.'
+    ),
     response_model=MincutToggleValveStatusResponse,
     response_model_exclude_unset=True,
 )
@@ -140,10 +144,10 @@ async def valve_toggle_status(
     commons: CommonsDep,
     mincut_id: int = Path(..., title="Mincut ID", description="ID of the mincut associated to the valve", examples=[1]),
     valve_id: int = Path(..., title="Valve ID", description="ID of the valve to update", examples=[1114]),
-    use_psectors: bool = Body(False, title="Use Psectors", description="Whether to use the planified network or not"),
+    payload: MincutToggleParams = Body(default_factory=MincutToggleParams),
 ):
     ctx = get_service_context(commons)
-    return await MincutService(ctx).valve_toggle_status(mincut_id, valve_id, use_psectors)
+    return await MincutService(ctx).valve_toggle_status(mincut_id, valve_id, payload.use_psectors)
 
 
 @router.post(
@@ -158,11 +162,10 @@ async def valve_toggle_status(
 async def start_mincut(
     commons: CommonsDep,
     mincut_id: int = Path(..., title="Mincut ID", description="ID of the mincut to start", examples=[1]),
-    plan: Optional[MincutPlanParams] = Body(None, title="Plan", description="Plan parameters"),
-    use_psectors: bool = Body(False, title="Use Psectors", description="Whether to use the planified network or not"),
+    payload: MincutStartParams = Body(default_factory=MincutStartParams),
 ):
     ctx = get_service_context(commons)
-    return await MincutService(ctx).start_mincut(mincut_id, plan, use_psectors)
+    return await MincutService(ctx).start_mincut(mincut_id, payload.plan, payload.use_psectors)
 
 
 @router.post(
@@ -177,17 +180,10 @@ async def start_mincut(
 async def end_mincut(
     commons: CommonsDep,
     mincut_id: int = Path(..., title="Mincut ID", description="ID of the mincut to end", examples=[1]),
-    shutoff_required: Optional[bool] = Body(
-        True,
-        title="Shutoff Required",
-        description=("Whether the mincut required shutting off the water supply to consumers"),
-        examples=[True],
-    ),
-    exec: Optional[MincutExecParams] = Body(None, title="Execution", description="Execution parameters"),
-    use_psectors: bool = Body(False, title="Use Psectors", description="Whether to use the planified network or not"),
+    payload: MincutEndParams = Body(default_factory=MincutEndParams),
 ):
     ctx = get_service_context(commons)
-    return await MincutService(ctx).end_mincut(mincut_id, shutoff_required, exec, use_psectors)
+    return await MincutService(ctx).end_mincut(mincut_id, payload.shutoff_required, payload.exec, payload.use_psectors)
 
 
 @router.post(
