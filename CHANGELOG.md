@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-23
+
 ### Added
 
 - **Curated MCP server** at `${API_ROOT}/v1/mcp/` (Streamable HTTP). One FastMCP instance per tenant, task-shaped tools over the REST API, gated by process `MCP_ENABLED` and per-tenant `API_MCP`.
