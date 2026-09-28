@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-09-28
+
 ### Fixed
 
 - Only upgrade once, don't let all workers try to upgrade at the same time.
@@ -394,7 +396,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.7.0...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.8.1...main
+[1.8.1]: https://github.com/Giswater/giswater-api/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/Giswater/giswater-api/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Giswater/giswater-api/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/Giswater/giswater-api/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/Giswater/giswater-api/compare/v1.6.0...v1.6.1
