@@ -20,7 +20,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, pool
+from sqlalchemy import create_engine, pool, text
 
 from ..core.config import TenantSettings, global_settings
 from .partitions import ensure_current_month_partitions
@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 VERSION_TABLE_SCHEMA = "gwapi"
 # Alembic's EnvironmentContext proxy lives in module globals; not safe concurrently.
 _alembic_upgrade_lock = threading.Lock()
+# Session advisory lock so Gunicorn workers (separate processes) don't all
+# CREATE TABLE gwapi.alembic_version at once. Per-database, so tenants on
+# different databases don't block each other. Arbitrary stable int8.
+_MIGRATE_ADVISORY_LOCK_KEY = 748392165014
 
 
 def _alembic_ini() -> Path:
@@ -61,9 +65,59 @@ def build_alembic_config(database_url: str) -> Config:
     return cfg
 
 
+def _drop_orphaned_version_type(conn) -> None:
+    """Drop a leftover composite type when the version table itself is gone.
+
+    Concurrent ``CREATE TABLE gwapi.alembic_version`` inserts a row type named
+    ``alembic_version`` before the table is visible. The loser fails with
+    ``pg_type_typname_nsp_index``, and a crashed race can leave the type behind
+    with no table. ``checkfirst`` only looks for the table, so the next upgrade
+    hits the same unique violation until the type is removed.
+    """
+    conn.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+                IF to_regclass('gwapi.alembic_version') IS NULL
+                   AND EXISTS (
+                        SELECT 1
+                        FROM pg_type t
+                        JOIN pg_namespace n ON n.oid = t.typnamespace
+                        WHERE n.nspname = 'gwapi'
+                          AND t.typname = 'alembic_version'
+                   ) THEN
+                    DROP TYPE gwapi.alembic_version;
+                END IF;
+            END $$
+            """
+        )
+    )
+    conn.commit()
+
+
 def _sync_upgrade(database_url: str) -> None:
     with _alembic_upgrade_lock:
-        command.upgrade(build_alembic_config(database_url), "head")
+        engine = create_engine(_to_sqlalchemy_url(database_url), poolclass=pool.NullPool)
+        try:
+            with engine.connect() as conn:
+                # Held on this session until unlock. Alembic uses its own connection.
+                conn.execute(
+                    text("SELECT pg_advisory_lock(:key)"),
+                    {"key": _MIGRATE_ADVISORY_LOCK_KEY},
+                )
+                conn.commit()
+                try:
+                    _drop_orphaned_version_type(conn)
+                    command.upgrade(build_alembic_config(database_url), "head")
+                finally:
+                    conn.execute(
+                        text("SELECT pg_advisory_unlock(:key)"),
+                        {"key": _MIGRATE_ADVISORY_LOCK_KEY},
+                    )
+                    conn.commit()
+        finally:
+            engine.dispose()
 
 
 def _sync_current_revision(database_url: str) -> str | None:
