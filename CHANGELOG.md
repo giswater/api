@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Only upgrade once, don't let all workers try to upgrade at the same time.
+
 ## [1.8.0] - 2026-09-23
 
 ### Added
