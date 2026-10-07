@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Drop session temp tables when a pooled connection is returned, so a later request does not fail on objects owned by another role (mincut and other graph functions).
+
 ## [1.8.1] - 2026-09-28
 
 ### Fixed

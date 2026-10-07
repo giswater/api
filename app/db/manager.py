@@ -46,12 +46,19 @@ class DatabaseManager:
 
     @staticmethod
     async def _reset_pooled_connection(conn):
-        """Drop session-level SET ROLE before the connection goes back into the pool.
+        """Clear session state before the connection goes back into the pool.
 
         Pool guarantees IDLE on entry; we must leave IDLE too or the conn is discarded.
-        SET/RESET inside a txn are undone by ROLLBACK, so COMMIT the RESET ROLE.
+        SET/RESET inside a txn are undone by ROLLBACK, so COMMIT both statements.
+
+        DISCARD TEMP drops every temp table and view in the session, whoever created
+        them. Giswater functions (mincut, mapzones) leave temp objects owned by the
+        SET ROLE user; the next checkout would fail with "must be owner" on ALTER,
+        CREATE INDEX, CREATE OR REPLACE VIEW and TRUNCATE. DISCARD ALL is not used:
+        it cannot run inside a transaction and would wipe prepared statements.
         """
         await conn.execute("RESET ROLE")
+        await conn.execute("DISCARD TEMP")
         await conn.commit()
 
     async def init_conn_pool(self):
