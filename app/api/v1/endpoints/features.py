@@ -28,6 +28,7 @@ from app.schemas.features.feature_models import (
     GullyFilters,
     LinkFilters,
     NodeFilters,
+    ValvePatch,
 )
 from app.services.features_service import FeaturesService
 
@@ -203,6 +204,17 @@ async def get_node_geojson_by_id(
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).get_feature_geojson("node", node_id)
+
+
+@router.patch(
+    "/nodes/{node_id}/valve",
+    description="Sets closed/broken on a valve node (updates its child view). 422 if the node is not a valve.",
+    response_model=GetFeatureFieldsResponse,
+    response_model_exclude_unset=True,
+)
+async def patch_node_valve(commons: CommonsDep, payload: ValvePatch, node_id: str = _NODE_ID):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).update_valve(node_id, payload.model_dump(exclude_none=True))
 
 
 @router.get(

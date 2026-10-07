@@ -299,6 +299,7 @@ _EXPECTED_TOOLS = {
     "manage_dscenario_objects",
     "find_features",
     "get_feature",
+    "set_valve",
     "search",
     "get_feature_at_point",
     "list_streets",

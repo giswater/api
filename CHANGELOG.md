@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`PATCH /features/nodes/{node_id}/valve`**: set `closed` and/or `broken` on a valve node (updates the child view from `cat_feature.child_layer`). 422 if the node is not a valve. MCP tool `set_valve`.
+
 ## [1.8.1] - 2026-09-28
 
 ### Fixed

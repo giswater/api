@@ -98,6 +98,13 @@ class LinkFilters(FeatureFilters):
     link_type: Optional[List[str]] = Field(None, description="Link type")
 
 
+class ValvePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    closed: Optional[bool] = Field(None, description="Valve closed")
+    broken: Optional[bool] = Field(None, description="Valve broken")
+
+
 class GetFeatureResponse(BaseAPIResponse[Body[Data]]):
     """Response model for a single feature form (gw_fct_getinfofromid)."""
 

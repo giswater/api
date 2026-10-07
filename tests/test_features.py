@@ -138,6 +138,69 @@ def test_nodes_filter_by_sys_type_valve(client, default_params):
         assert feature.get("sys_type") == "VALVE"
 
 
+def _as_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.lower() in {"true", "t", "1"}
+    return bool(value)
+
+
+def _current_closed(client, default_params, node_id, feature) -> bool:
+    if "closed" in feature and feature["closed"] is not None:
+        return _as_bool(feature["closed"])
+    form = client.get(api(f"/features/nodes/{node_id}/form"), params=default_params)
+    assert form.status_code == 200, form.text
+    fields = form.json().get("body", {}).get("data", {}).get("fields") or []
+    for field in fields:
+        if field.get("columnname") == "closed":
+            return _as_bool(field.get("value"))
+    pytest.skip(f"node {node_id} has no closed field")
+
+
+@pytest.mark.ws
+def test_patch_node_valve_roundtrip(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    listing = client.get(api("/features/nodes"), params={**default_params, "sys_type": "VALVE", "limit": 1})
+    assert listing.status_code == 200
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
+        pytest.skip("No valves available")
+
+    node_id = features[0]["node_id"]
+    original = _current_closed(client, default_params, node_id, features[0])
+    flipped = not original
+    path = api(f"/features/nodes/{node_id}/valve")
+    try:
+        response = client.patch(path, params=default_params, json={"closed": flipped})
+        assert response.status_code == 200, response.text
+        updated = response.json()["body"]["data"]["feature"]
+        assert updated["closed"] is flipped
+
+        again = client.patch(path, params=default_params, json={"closed": flipped})
+        assert again.status_code == 200, again.text
+        assert again.json()["body"]["data"]["feature"]["closed"] is flipped
+    finally:
+        client.patch(path, params=default_params, json={"closed": original})
+
+
+def test_patch_node_valve_not_a_valve_returns_422(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    listing = client.get(api("/features/nodes"), params={**default_params, "limit": 50})
+    assert listing.status_code == 200
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    node = next((feature for feature in features if feature.get("sys_type") != "VALVE"), None)
+    if node is None:
+        pytest.skip("No non-valve nodes available")
+
+    response = client.patch(
+        api(f"/features/nodes/{node['node_id']}/valve"),
+        params=default_params,
+        json={"closed": True},
+    )
+    assert response.status_code == 422
+
+
 def test_unknown_filter_returns_422(client, default_params):
     assert_ready(client)
 

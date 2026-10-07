@@ -13,6 +13,7 @@ from typing import Literal, Optional
 from pydantic import ValidationError
 
 from app.core.exceptions import InvalidParametersError
+from app.db.execution import execute_sql_select, execute_sql_update
 from app.schemas.common import ExtentModel
 from app.schemas.features.feature_models import (
     FeatureFilters,
@@ -22,6 +23,7 @@ from app.schemas.features.feature_models import (
     get_feature_type_param,
 )
 from app.services.context import ServiceContext
+from app.services.helpers import accepted_data_response
 from app.services.procedure import run_procedure
 from app.utils.body import create_body_dict
 
@@ -163,3 +165,29 @@ class FeaturesService:
             cur_user=self.ctx.user_id,
         )
         return await run_procedure(self.ctx, "gw_fct_getinfofromid", body)
+
+    async def update_valve(self, node_id: str, data: dict) -> dict:
+        _, node = await self._get_feature_by_id("node", node_id, "list")
+        if node.get("sys_type") != "VALVE":
+            raise InvalidParametersError(f"node '{node_id}' is not a valve")
+        db = {
+            "log": self.ctx.logger,
+            "db_manager": self.ctx.db_manager,
+            "schema": self.ctx.schema,
+            "user": self.ctx.user_id,
+            "db_role": self.ctx.db_role,
+        }
+        child = await execute_sql_select(
+            table_name="cat_feature",
+            columns=["child_layer"],
+            where_clause="id = %s",
+            parameters=(node["node_type"],),
+            **db,
+        )
+        rows = await execute_sql_update(
+            table_name=child[0]["child_layer"],
+            data=data,
+            where_data={"node_id": node_id},
+            **db,
+        )
+        return await accepted_data_response(self.ctx, "Valve updated", {"feature": rows[0]})

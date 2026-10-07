@@ -259,6 +259,24 @@ async def get_feature(
     return one_row(await api.get(path, schema=schema), compact=compact)
 
 
+@tool(feature="api_features", project_types={"WS"})
+async def set_valve(
+    api: TenantApi,
+    schema: SchemaName,
+    node_id: Annotated[str, Field(description="Valve node id")],
+    closed: Annotated[bool | None, Field(description="Set closed (true) / open (false)")] = None,
+    broken: Annotated[bool | None, Field(description="Set broken flag")] = None,
+) -> dict:
+    """Set a valve's real network state (man_valve), not a mincut valve. Idempotent setter, safe to retry.
+
+    Fails if the node is not a valve. Returns the updated row.
+    """
+    body = _drop_none({"closed": closed, "broken": broken})
+    if not body:
+        raise ToolError("Pass closed and/or broken")
+    return one_row(await api.patch(f"/features/nodes/{node_id}/valve", schema=schema, json=body))
+
+
 @tool(feature="api_basic", read_only=True)
 async def search(
     api: TenantApi,
