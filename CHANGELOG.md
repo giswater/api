@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`PATCH /features/nodes/{node_id}/valve`**: set `closed` and/or `broken` on a valve node (updates the child view from `cat_feature.child_layer`). 422 if the node is not a valve. MCP tool `set_valve`.
+- **`PATCH /features/arcs/{arc_id}`**: update an arc through `ve_arc` (`gw_trg_edit_arc`), including catalog, state, epa type, mapzones and labels. Sending `arccat_id` sets `arc_type` from `cat_arc`. Unknown columns, trigger validation and foreign-key failures return 422. MCP tool `update_arc`.
 
 ## [1.8.1] - 2026-09-28
 

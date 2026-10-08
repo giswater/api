@@ -201,6 +201,117 @@ def test_patch_node_valve_not_a_valve_returns_422(client, default_params):
     assert response.status_code == 422
 
 
+def _listed_arcs(client, default_params) -> list[dict]:
+    listing = client.get(api("/features/arcs"), params={**default_params, "limit": 50})
+    assert listing.status_code == 200, listing.text
+    return listing.json().get("body", {}).get("data", {}).get("features") or []
+
+
+def test_patch_arc_roundtrip(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    features = _listed_arcs(client, default_params)
+    if not features:
+        pytest.skip("No arcs available")
+
+    arc = features[0]
+    path = api(f"/features/arcs/{arc['arc_id']}")
+    original = arc.get("descript")
+    try:
+        response = client.patch(path, params=default_params, json={"descript": "api-patch-test"})
+        assert response.status_code == 200, response.text
+        assert response.json()["body"]["data"]["feature"]["descript"] == "api-patch-test"
+
+        cleared = client.patch(path, params=default_params, json={"descript": None})
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["body"]["data"]["feature"]["descript"] is None
+    finally:
+        client.patch(path, params=default_params, json={"descript": original})
+
+
+def test_patch_arc_change_arccat(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    features = _listed_arcs(client, default_params)
+    if not features:
+        pytest.skip("No arcs available")
+
+    base = features[0]
+    other = next(
+        (
+            feature
+            for feature in features
+            if feature.get("arccat_id")
+            and feature.get("arc_type")
+            and feature["arc_type"] != base.get("arc_type")
+            and feature["arccat_id"] != base.get("arccat_id")
+        ),
+        None,
+    )
+    if other is None:
+        pytest.skip("No arc with a different catalog and arc_type")
+
+    path = api(f"/features/arcs/{base['arc_id']}")
+    try:
+        response = client.patch(path, params=default_params, json={"arccat_id": other["arccat_id"]})
+        assert response.status_code == 200, response.text
+        updated = response.json()["body"]["data"]["feature"]
+        assert updated["arccat_id"] == other["arccat_id"]
+        assert updated["arc_type"] == other["arc_type"]
+    finally:
+        client.patch(
+            path,
+            params=default_params,
+            json={"arccat_id": base["arccat_id"], "arc_type": base["arc_type"]},
+        )
+
+
+def test_patch_arc_rejects_excluded_field(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    features = _listed_arcs(client, default_params)
+    if not features:
+        pytest.skip("No arcs available")
+
+    response = client.patch(
+        api(f"/features/arcs/{features[0]['arc_id']}"),
+        params=default_params,
+        json={"the_geom": "LINESTRING(0 0, 1 1)"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.ws
+def test_patch_arc_ud_field_on_ws_returns_422(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    features = _listed_arcs(client, default_params)
+    if not features:
+        pytest.skip("No arcs available")
+
+    response = client.patch(
+        api(f"/features/arcs/{features[0]['arc_id']}"),
+        params=default_params,
+        json={"y1": 1},
+    )
+    assert response.status_code == 422
+
+
+def test_patch_arc_invalid_arccat_returns_422(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+
+    features = _listed_arcs(client, default_params)
+    if not features:
+        pytest.skip("No arcs available")
+
+    response = client.patch(
+        api(f"/features/arcs/{features[0]['arc_id']}"),
+        params=default_params,
+        json={"arccat_id": "NOPE"},
+    )
+    assert response.status_code == 422
+
+
 def test_unknown_filter_returns_422(client, default_params):
     assert_ready(client)
 

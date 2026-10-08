@@ -277,6 +277,32 @@ async def set_valve(
     return one_row(await api.patch(f"/features/nodes/{node_id}/valve", schema=schema, json=body))
 
 
+@tool(feature="api_features")
+async def update_arc(
+    api: TenantApi,
+    schema: SchemaName,
+    arc_id: Annotated[str, Field(description="Arc id")],
+    fields: Annotated[
+        dict,
+        Field(
+            description=(
+                "Arc columns to set (null clears), e.g. arccat_id, state, state_type, epa_type, expl_id, "
+                "sector_id, dma_id, descript, workcat_id. No geometry or node_1/node_2. "
+                "arc_type is derived from arccat_id."
+            )
+        ),
+    ],
+) -> dict:
+    """Update an arc via ve_arc (fires gw_trg_edit_arc). Setter, safe to retry.
+
+    Side effects: state 1->2 adds it to the current psector; state 0 detaches nodes; epa_type change resets EPA data.
+    Returns the updated row.
+    """
+    if not fields:
+        raise ToolError("Pass at least one field")
+    return one_row(await api.patch(f"/features/arcs/{arc_id}", schema=schema, json=fields))
+
+
 @tool(feature="api_basic", read_only=True)
 async def search(
     api: TenantApi,

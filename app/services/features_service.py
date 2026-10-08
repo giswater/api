@@ -166,28 +166,44 @@ class FeaturesService:
         )
         return await run_procedure(self.ctx, "gw_fct_getinfofromid", body)
 
-    async def update_valve(self, node_id: str, data: dict) -> dict:
-        _, node = await self._get_feature_by_id("node", node_id, "list")
-        if node.get("sys_type") != "VALVE":
-            raise InvalidParametersError(f"node '{node_id}' is not a valve")
-        db = {
+    def _db(self) -> dict:
+        return {
             "log": self.ctx.logger,
             "db_manager": self.ctx.db_manager,
             "schema": self.ctx.schema,
             "user": self.ctx.user_id,
             "db_role": self.ctx.db_role,
         }
+
+    async def _update_row(self, table_name: str, where_data: dict, data: dict, message: str) -> dict:
+        rows = await execute_sql_update(table_name=table_name, data=data, where_data=where_data, **self._db())
+        return await accepted_data_response(self.ctx, message, {"feature": rows[0]})
+
+    async def update_valve(self, node_id: str, data: dict) -> dict:
+        _, node = await self._get_feature_by_id("node", node_id, "list")
+        if node.get("sys_type") != "VALVE":
+            raise InvalidParametersError(f"node '{node_id}' is not a valve")
         child = await execute_sql_select(
             table_name="cat_feature",
             columns=["child_layer"],
             where_clause="id = %s",
             parameters=(node["node_type"],),
-            **db,
+            **self._db(),
         )
-        rows = await execute_sql_update(
-            table_name=child[0]["child_layer"],
-            data=data,
-            where_data={"node_id": node_id},
-            **db,
-        )
-        return await accepted_data_response(self.ctx, "Valve updated", {"feature": rows[0]})
+        return await self._update_row(child[0]["child_layer"], {"node_id": node_id}, data, "Valve updated")
+
+    async def update_arc(self, arc_id: str, data: dict) -> dict:
+        await self._get_feature_by_id("arc", arc_id, "list")
+        # Both edit triggers reject an arccat_id whose arc_type differs from NEW.arc_type (message 4464).
+        if data.get("arccat_id") and "arc_type" not in data:
+            cat = await execute_sql_select(
+                table_name="cat_arc",
+                columns=["arc_type"],
+                where_clause="id = %s",
+                parameters=(data["arccat_id"],),
+                **self._db(),
+            )
+            if not cat:
+                raise InvalidParametersError(f"arccat_id '{data['arccat_id']}' not found")
+            data["arc_type"] = cat[0]["arc_type"]
+        return await self._update_row(get_feature_table("arc"), {"arc_id": arc_id}, data, "Arc updated")

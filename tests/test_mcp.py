@@ -300,6 +300,7 @@ _EXPECTED_TOOLS = {
     "find_features",
     "get_feature",
     "set_valve",
+    "update_arc",
     "search",
     "get_feature_at_point",
     "list_streets",

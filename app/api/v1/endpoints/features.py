@@ -22,6 +22,7 @@ from app.schemas.features.feature_models import (
     FeatureFilters,
     GetFeatureFieldsResponse,
     GetFeatureGeoJsonResponse,
+    ArcPatch,
     GetFeatureResponse,
     GetFeaturesGeoJsonResponse,
     GetFeaturesResponse,
@@ -300,6 +301,20 @@ async def get_arc_geojson_by_id(
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).get_feature_geojson("arc", arc_id)
+
+
+@router.patch(
+    "/arcs/{arc_id}",
+    description=(
+        "Updates an arc through ve_arc (gw_trg_edit_arc). Send null to clear a field. "
+        "Changing arccat_id also sets arc_type from cat_arc. Trigger validation errors return 422."
+    ),
+    response_model=GetFeatureFieldsResponse,
+    response_model_exclude_unset=True,
+)
+async def patch_arc(commons: CommonsDep, payload: ArcPatch, arc_id: str = _ARC_ID):
+    ctx = get_service_context(commons)
+    return await FeaturesService(ctx).update_arc(arc_id, payload.model_dump(exclude_unset=True))
 
 
 @router.get(

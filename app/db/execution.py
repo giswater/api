@@ -414,6 +414,9 @@ async def execute_sql_update(
                 await cursor.execute(query, tuple(values))
                 rows = await cursor.fetchall()
             await conn.commit()
+        except (psycopg.errors.UndefinedColumn, psycopg.errors.RaiseException, psycopg.IntegrityError) as e:
+            await conn.rollback()
+            raise HTTPException(status_code=422, detail=str(e)) from e
         except psycopg.Error as e:
             await conn.rollback()
             raise HTTPException(status_code=500, detail=str(e)) from e

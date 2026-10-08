@@ -5,6 +5,7 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
+from datetime import date
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -103,6 +104,107 @@ class ValvePatch(BaseModel):
 
     closed: Optional[bool] = Field(None, description="Valve closed")
     broken: Optional[bool] = Field(None, description="Valve broken")
+
+
+class ArcPatch(BaseModel):
+    """Writable ve_arc columns (gw_trg_edit_arc). Geometry, node_1/node_2 and computed columns are excluded."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    arccat_id: Optional[str] = Field(None, description="Arc catalog id. Sets arc_type from cat_arc when omitted")
+    arc_type: Optional[str] = Field(
+        None, description="Arc type. Derived from arccat_id; WS uses it only for the catalog check"
+    )
+    state: Optional[int] = Field(None, description="State. 1->2 adds the arc to the current psector; 0 detaches nodes")
+    state_type: Optional[int] = Field(None, description="State type, must belong to state")
+    epa_type: Optional[str] = Field(None, description="EPA type. Changing it resets the arc's EPA data")
+
+    expl_id: Optional[int] = Field(None, description="Exploitation id. Also updates the arc's connecs and links")
+    sector_id: Optional[int] = Field(None, description="Sector id")
+    dma_id: Optional[int] = Field(None, description="DMA id")
+    expl_visibility: Optional[List[int]] = Field(None, description="Exploitations the arc is visible in")
+    presszone_id: Optional[int] = Field(None, description="Pressure zone id (WS only)")
+    dqa_id: Optional[int] = Field(None, description="DQA id (WS only)")
+    omzone_id: Optional[int] = Field(None, description="OM zone id (UD only)")
+    omunit_id: Optional[int] = Field(None, description="OM unit id (UD only)")
+    drainzone_outfall: Optional[List[int]] = Field(None, description="Drainzone outfall node ids (UD only)")
+    dwfzone_outfall: Optional[List[int]] = Field(None, description="DWF zone outfall node ids (UD only)")
+
+    code: Optional[str] = Field(None, description="Code. On UD, null is regenerated")
+    sys_code: Optional[str] = Field(None, description="System code")
+    descript: Optional[str] = Field(None, description="Description")
+    annotation: Optional[str] = Field(None, description="Annotation")
+    observ: Optional[str] = Field(None, description="Observations")
+    comment: Optional[str] = Field(None, description="Comment")
+    custom_length: Optional[float] = Field(None, description="Custom length")
+    num_value: Optional[float] = Field(None, description="Numeric value")
+    link: Optional[str] = Field(None, description="External link")
+    datasource: Optional[int] = Field(None, description="Datasource (WS only)")
+
+    soilcat_id: Optional[str] = Field(None, description="Soil catalog id")
+    function_type: Optional[str] = Field(None, description="Function type")
+    category_type: Optional[str] = Field(None, description="Category type")
+    fluid_type: Optional[int | str] = Field(None, description="Fluid type (WS: text, UD: integer)")
+    location_type: Optional[str] = Field(None, description="Location type")
+    matcat_id: Optional[str] = Field(
+        None, description="Material catalog id (UD only; ignored when cat_arc defines one)"
+    )
+
+    workcat_id: Optional[str] = Field(None, description="Work catalog id")
+    workcat_id_end: Optional[str] = Field(None, description="End work catalog id")
+    workcat_id_plan: Optional[str] = Field(None, description="Planned work catalog id")
+    builtdate: Optional[date] = Field(None, description="Built date")
+    enddate: Optional[date] = Field(None, description="End date")
+    ownercat_id: Optional[str] = Field(None, description="Owner catalog id")
+
+    muni_id: Optional[int] = Field(None, description="Municipality id")
+    streetaxis_id: Optional[str] = Field(None, description="Street axis id")
+    streetaxis2_id: Optional[str] = Field(None, description="Second street axis id")
+    postcode: Optional[str] = Field(None, description="Postcode")
+    district_id: Optional[int] = Field(None, description="District id")
+    postnumber: Optional[int] = Field(None, description="Post number")
+    postnumber2: Optional[int] = Field(None, description="Second post number")
+    postcomplement: Optional[str] = Field(None, description="Post complement")
+    postcomplement2: Optional[str] = Field(None, description="Second post complement")
+
+    verified: Optional[int] = Field(None, description="Verified")
+    publish: Optional[bool] = Field(None, description="Published")
+    inventory: Optional[bool] = Field(None, description="In inventory")
+    om_state: Optional[str] = Field(None, description="OM state")
+    conserv_state: Optional[str] = Field(None, description="Conservation state")
+    lock_level: Optional[int] = Field(None, description="Lock level")
+    is_scadamap: Optional[bool] = Field(None, description="Shown on the SCADA map")
+    uncertain: Optional[bool] = Field(None, description="Uncertain (UD only)")
+
+    adate: Optional[str] = Field(None, description="Asset date")
+    adescript: Optional[str] = Field(None, description="Asset description")
+    asset_id: Optional[str] = Field(None, description="Asset id")
+    pavcat_id: Optional[str] = Field(None, description="Pavement catalog id")
+    parent_id: Optional[int] = Field(None, description="Parent arc id")
+    brand_id: Optional[str] = Field(None, description="Brand id")
+    model_id: Optional[str] = Field(None, description="Model id")
+    serial_number: Optional[str] = Field(None, description="Serial number")
+    dataquality: Optional[int] = Field(None, description="Data quality")
+    dataquality_obs: Optional[List[str]] = Field(None, description="Data quality observations")
+
+    label_x: Optional[str] = Field(None, description="Label x")
+    label_y: Optional[str] = Field(None, description="Label y")
+    label_rotation: Optional[float] = Field(None, description="Label rotation")
+    label_quadrant: Optional[str] = Field(None, description="Label quadrant")
+
+    visitability: Optional[int] = Field(None, description="Visitability (UD only)")
+    registration_date: Optional[date] = Field(None, description="Registration date (UD only)")
+    meandering: Optional[int] = Field(None, description="Meandering (UD only)")
+    last_visitdate: Optional[date] = Field(None, description="Last visit date (UD only)")
+    negative_offset: Optional[bool] = Field(None, description="Negative offset (UD only)")
+    initoverflowpath: Optional[bool] = Field(None, description="Initial overflow path (UD only)")
+    y1: Optional[float] = Field(None, description="Upstream depth (UD only)")
+    y2: Optional[float] = Field(None, description="Downstream depth (UD only)")
+    elev1: Optional[float] = Field(None, description="Upstream elevation (UD only)")
+    elev2: Optional[float] = Field(None, description="Downstream elevation (UD only)")
+    custom_elev1: Optional[float] = Field(None, description="Custom upstream elevation (UD only)")
+    custom_elev2: Optional[float] = Field(None, description="Custom downstream elevation (UD only)")
+    inverted_slope: Optional[bool] = Field(None, description="Inverted slope (UD only)")
 
 
 class GetFeatureResponse(BaseAPIResponse[Body[Data]]):
