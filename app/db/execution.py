@@ -9,12 +9,14 @@ import asyncio
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 import psycopg
 from fastapi import HTTPException
 from psycopg import sql
+from psycopg.pq import TransactionStatus
 from psycopg.rows import dict_row
 
 from ..core.config import global_settings
@@ -23,6 +25,42 @@ from .context import REQUEST_ID_CTX, _resolve_db_identity
 from .log_store import insert_api_db_log
 
 logger = logging.getLogger(__name__)
+
+
+def _transaction_is_open(conn) -> bool:
+    status = getattr(getattr(conn, "info", None), "transaction_status", None)
+    return status not in (None, TransactionStatus.IDLE)
+
+
+@asynccontextmanager
+async def role_connection(
+    db_manager,
+    *,
+    user: str | None = "anonymous",
+    db_role: str | None = None,
+    set_role: bool = True,
+):
+    """Checkout a pooled connection and SET ROLE once for a multi-statement transaction.
+
+    The caller commits on success. On exception, an open transaction is rolled back,
+    which undoes both SET ROLE and any statements in the same transaction. The pool
+    still RESET ROLE when the connection is returned.
+
+    Identity resolution matches execute_procedure: explicit user/db_role, otherwise
+    DB_IDENTITY_CTX. With no identity, the login role is left unchanged.
+    """
+    async with db_manager.get_db() as conn:
+        if conn is None:
+            raise DatabaseUnavailableError()
+        try:
+            identity = _resolve_db_identity(user, db_role)
+            if set_role and identity:
+                await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(identity)))
+            yield conn
+        except BaseException:
+            if _transaction_is_open(conn):
+                await conn.rollback()
+            raise
 
 
 def create_response(db_result=None, form_xml=None, status=None, message=None):

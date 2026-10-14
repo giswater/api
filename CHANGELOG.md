@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `role_connection` in `app/db/execution.py`: one `SET ROLE` for a multi-statement transaction. Callers commit on success; an exception rolls the transaction back, which clears both the role and the statements. `execute_sql*` signatures are unchanged.
 - **Celery + Redis** background job transport: `app/celery_app.py`, `app/tasks/` (`execute_job`, `reconcile_stale_jobs`, worker runtime). Postgres (`gwapi.jobs`) remains the source of truth; Redis is broker-only.
 - **Alembic revision `0002_gwapi_jobs`**: creates `gwapi.jobs` (progress column, indexes) as part of the API-owned schema.
 - Job progress reporting (`app/jobs/progress.py`) and worker Keycloak auth (`app/jobs/worker_auth.py`, per-tenant `WORKER_KEYCLOAK_*`).
