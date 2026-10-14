@@ -8,11 +8,15 @@ or (at your option) any later version.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
+
+from app.jobs.exceptions import JobCancelledError
+from app.jobs.models import CANCELLED_BY_USER
 
 JOB_STEP_CONFIG: dict[str, dict[str, dict[str, Any]]] = {}
 
@@ -77,10 +81,12 @@ class JobProgressReporter:
         job_type: str,
         *,
         min_interval_seconds: float = 1.0,
+        cancel_event: threading.Event | None = None,
     ):
         self._repo = repo
         self._job_id = job_id
         self._job_type = job_type
+        self._cancel_event = cancel_event
         self._min_interval = min_interval_seconds
         self._last_flush = 0.0
         self._completed_steps: set[str] = set()
@@ -102,6 +108,7 @@ class JobProgressReporter:
         message: str | None = None,
         force: bool = False,
     ) -> None:
+        self._raise_if_cancelled()
         now = time.monotonic()
         previous = self.state.current_step
         if previous and previous != step and previous not in self._completed_steps:
@@ -124,6 +131,7 @@ class JobProgressReporter:
         await self._flush(force=force)
 
     async def complete_step(self, step: str, *, force: bool = True) -> None:
+        self._raise_if_cancelled()
         self._close_step(step, time.monotonic())
         self._completed_steps.add(step)
         self.state.percentage = calculate_percentage(
@@ -141,6 +149,10 @@ class JobProgressReporter:
             self.state.message = message
         await self._flush(force=force)
 
+    def _raise_if_cancelled(self) -> None:
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            raise JobCancelledError(CANCELLED_BY_USER)
+
     async def _flush(self, *, force: bool) -> None:
         now = time.monotonic()
         if not force and (now - self._last_flush) < self._min_interval:
@@ -154,20 +166,27 @@ class JobProgressReporter:
 
         def on_progress(engine_pct: int, message: str) -> None:
             asyncio.run_coroutine_threadsafe(
-                self.set_step(
-                    step,
-                    step_current=engine_pct,
-                    step_total=100,
-                    message=message,
-                ),
+                self._report_engine_progress(step, engine_pct, message),
                 loop,
             )
 
         return on_progress
 
+    async def _report_engine_progress(self, step: str, engine_pct: int, message: str) -> None:
+        """Progress from the engine thread must not abort the engine via this callback."""
+        try:
+            await self.set_step(
+                step,
+                step_current=engine_pct,
+                step_total=100,
+                message=message,
+            )
+        except JobCancelledError:
+            return
+
 
 def poll_interval_ms_for_progress(job_type: str, progress: dict[str, Any] | None, status: str) -> int | None:
-    if status in ("finished", "failed"):
+    if status in ("finished", "failed", "cancelled"):
         return None
     if not progress:
         return None

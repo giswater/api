@@ -17,7 +17,7 @@ from psycopg.types.json import Json
 
 from app.core.exceptions import DatabaseUnavailableError
 from app.db.schema import GWAPI_SCHEMA, JOBS_TABLE
-from app.jobs.models import JobRecord, JobStatus
+from app.jobs.models import CANCELLED_BY_USER, JobRecord, JobStatus
 
 
 def _row_to_record(row: dict[str, Any]) -> JobRecord:
@@ -144,14 +144,21 @@ class JobRepository:
                         """
                         UPDATE {}.{}
                         SET status = %s, result = %s, finished_at = now(), error = NULL
-                        WHERE id = %s
+                        WHERE id = %s AND status IN (%s, %s)
                         """
                     ).format(sql.Identifier(GWAPI_SCHEMA), sql.Identifier(JOBS_TABLE)),
-                    (JobStatus.FINISHED.value, Json(result), job_id),
+                    (
+                        JobStatus.FINISHED.value,
+                        Json(result),
+                        job_id,
+                        JobStatus.RUNNING.value,
+                        JobStatus.CANCELLING.value,
+                    ),
                 )
             await conn.commit()
 
     async def fail_job(self, job_id: UUID, error: str) -> None:
+        """Mark failed unless the job is already finished or cancelled."""
         async with self._db.get_db() as conn:
             if conn is None:
                 raise DatabaseUnavailableError()
@@ -161,12 +168,85 @@ class JobRepository:
                         """
                         UPDATE {}.{}
                         SET status = %s, error = %s, finished_at = now()
-                        WHERE id = %s
+                        WHERE id = %s AND status IN (%s, %s, %s)
                         """
                     ).format(sql.Identifier(GWAPI_SCHEMA), sql.Identifier(JOBS_TABLE)),
-                    (JobStatus.FAILED.value, error, job_id),
+                    (
+                        JobStatus.FAILED.value,
+                        error,
+                        job_id,
+                        JobStatus.CREATED.value,
+                        JobStatus.RUNNING.value,
+                        JobStatus.CANCELLING.value,
+                    ),
                 )
             await conn.commit()
+
+    async def request_cancel(self, job_id: UUID, tenant_id: str) -> JobRecord | None:
+        """Move ``created`` to ``cancelled``, or ``running`` to ``cancelling``.
+
+        Returns the row after the update, or the current row when the status
+        did not change. ``None`` when the job does not exist for this tenant.
+        """
+        async with self._db.get_db() as conn:
+            if conn is None:
+                raise DatabaseUnavailableError()
+            async with conn.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(
+                    sql.SQL(
+                        """
+                        UPDATE {}.{}
+                        SET status = CASE WHEN status = %s THEN %s ELSE %s END,
+                            error = CASE WHEN status = %s THEN %s ELSE error END,
+                            finished_at = CASE WHEN status = %s THEN now() ELSE finished_at END
+                        WHERE id = %s AND tenant_id = %s AND status IN (%s, %s)
+                        RETURNING *
+                        """
+                    ).format(sql.Identifier(GWAPI_SCHEMA), sql.Identifier(JOBS_TABLE)),
+                    (
+                        JobStatus.CREATED.value,
+                        JobStatus.CANCELLED.value,
+                        JobStatus.CANCELLING.value,
+                        JobStatus.CREATED.value,
+                        CANCELLED_BY_USER,
+                        JobStatus.CREATED.value,
+                        job_id,
+                        tenant_id,
+                        JobStatus.CREATED.value,
+                        JobStatus.RUNNING.value,
+                    ),
+                )
+                row = await cursor.fetchone()
+            await conn.commit()
+        if row is not None:
+            return _row_to_record(row)
+        return await self.get_job(job_id, tenant_id)
+
+    async def mark_cancelled(self, job_id: UUID, error: str = CANCELLED_BY_USER) -> bool:
+        """Close a running or cancelling job as cancelled. Returns whether a row changed."""
+        async with self._db.get_db() as conn:
+            if conn is None:
+                raise DatabaseUnavailableError()
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    sql.SQL(
+                        """
+                        UPDATE {}.{}
+                        SET status = %s, error = %s, finished_at = now()
+                        WHERE id = %s AND status IN (%s, %s)
+                        """
+                    ).format(sql.Identifier(GWAPI_SCHEMA), sql.Identifier(JOBS_TABLE)),
+                    (
+                        JobStatus.CANCELLED.value,
+                        error,
+                        job_id,
+                        JobStatus.RUNNING.value,
+                        JobStatus.CANCELLING.value,
+                    ),
+                )
+                updated = cursor.rowcount > 0
+            await conn.commit()
+        return updated
 
     async def update_side_effects(self, job_id: UUID, side_effects: dict[str, Any]) -> None:
         async with self._db.get_db() as conn:
@@ -200,10 +280,10 @@ class JobRepository:
                 return []
             async with conn.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute(
-                    sql.SQL("SELECT * FROM {}.{} WHERE status = %s AND tenant_id = %s ORDER BY started_at").format(
-                        sql.Identifier(GWAPI_SCHEMA), sql.Identifier(JOBS_TABLE)
-                    ),
-                    (JobStatus.RUNNING.value, tenant_id),
+                    sql.SQL(
+                        "SELECT * FROM {}.{} WHERE status IN (%s, %s) AND tenant_id = %s ORDER BY started_at"
+                    ).format(sql.Identifier(GWAPI_SCHEMA), sql.Identifier(JOBS_TABLE)),
+                    (JobStatus.RUNNING.value, JobStatus.CANCELLING.value, tenant_id),
                 )
                 rows = await cursor.fetchall()
             await conn.commit()

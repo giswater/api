@@ -17,11 +17,16 @@ from uuid import UUID
 class JobStatus(StrEnum):
     CREATED = "created"
     RUNNING = "running"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
     FAILED = "failed"
     FINISHED = "finished"
 
 
-TERMINAL_STATUSES = frozenset({JobStatus.FAILED, JobStatus.FINISHED})
+TERMINAL_STATUSES = frozenset({JobStatus.FAILED, JobStatus.FINISHED, JobStatus.CANCELLED})
+# Statuses a worker may still be executing. Reconcile watches both.
+ACTIVE_STATUSES = frozenset({JobStatus.RUNNING, JobStatus.CANCELLING})
+CANCELLED_BY_USER = "Cancelled by user"
 
 
 @dataclass(frozen=True)

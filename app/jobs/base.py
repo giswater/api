@@ -28,4 +28,12 @@ class BaseJob(ABC):
 
     @abstractmethod
     async def repair(self, ctx: JobContext, payload: dict[str, Any], side_effects: dict[str, Any]) -> None:
-        """Revert partial changes after failure or worker restart."""
+        """Compensate a failed attempt. A run failure may keep partial data."""
+
+    async def cancel(self, ctx: JobContext, payload: dict[str, Any], side_effects: dict[str, Any]) -> None:
+        """Discard this attempt after a user cancel. Default: same cleanup as repair."""
+        await self.repair(ctx, payload, side_effects)
+
+    async def request_cancel(self, ctx: JobContext, payload: dict[str, Any], side_effects: dict[str, Any]) -> None:
+        """Best-effort signal while the job is still running (for example, cancel a child job)."""
+        return None

@@ -8,6 +8,7 @@ or (at your option) any later version.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,7 @@ class JobContext:
     bearer_token: str | None
     logger: logging.Logger
     progress: JobProgressReporter | None = None
+    cancel_event: threading.Event | None = None
 
 
 def job_context_from_tenant(
@@ -31,10 +33,12 @@ def job_context_from_tenant(
     bearer_token: str | None = None,
     logger: logging.Logger | None = None,
     progress: JobProgressReporter | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> JobContext:
     return JobContext(
         tenant=tenant,
         bearer_token=bearer_token,
         logger=logger or tenant.api_logger,
         progress=progress,
+        cancel_event=cancel_event,
     )

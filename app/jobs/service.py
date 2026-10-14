@@ -12,7 +12,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from app.jobs.exceptions import JobNotFoundError
+from app.jobs.exceptions import JobAlreadyClosedError, JobNotFoundError, UnknownJobTypeError
 from app.jobs.models import JobRecord, JobStatus, TERMINAL_STATUSES
 from app.jobs.poll_config import poll_interval_ms_for_job
 from app.jobs.progress import poll_interval_ms_for_progress
@@ -62,6 +62,48 @@ class JobService:
             logger.exception("[%s] failed to enqueue job %s (%s)", self._tenant.id, job_id, job_type)
             await self._repo.fail_job(job_id, f"enqueue failed: {exc}")
             raise RuntimeError(f"Failed to enqueue job: {exc}") from exc
+
+    async def cancel_job(self, job_id: UUID, *, bearer_token: str | None = None) -> JobStatusResponse:
+        """Request cancellation. A job that has not started is cancelled immediately."""
+        record = await self._require_job(job_id)
+        if record.status in (JobStatus.FINISHED, JobStatus.FAILED):
+            raise JobAlreadyClosedError(f"Job {job_id} is already {record.status.value}")
+        if record.status in (JobStatus.CANCELLING, JobStatus.CANCELLED):
+            return self.build_status_response(record)
+
+        updated = await self._repo.request_cancel(job_id, self._tenant.id)
+        if updated is None:
+            raise JobNotFoundError(f"Job {job_id} not found")
+        if updated.status in (JobStatus.FINISHED, JobStatus.FAILED):
+            raise JobAlreadyClosedError(f"Job {job_id} is already {updated.status.value}")
+        if updated.status == JobStatus.CANCELLED and record.status == JobStatus.CREATED:
+            await self._revoke_task(job_id)
+        if updated.status == JobStatus.CANCELLING:
+            await self._notify_cancel(updated, bearer_token)
+        return self.build_status_response(updated)
+
+    async def _revoke_task(self, job_id: UUID) -> None:
+        from app.celery_app import celery_app
+
+        try:
+            await asyncio.to_thread(celery_app.control.revoke, str(job_id), terminate=False)
+        except Exception:
+            logger.exception("[%s] failed to revoke celery task %s", self._tenant.id, job_id)
+
+    async def _notify_cancel(self, record: JobRecord, bearer_token: str | None) -> None:
+        from app.jobs.context import job_context_from_tenant
+        from app.jobs.registry import get_job_class
+
+        try:
+            job_impl = get_job_class(record.type)()
+        except UnknownJobTypeError:
+            logger.warning("[%s] cancel: no handler for job %s (%s)", self._tenant.id, record.id, record.type)
+            return
+        try:
+            ctx = job_context_from_tenant(self._tenant, bearer_token=bearer_token, logger=self._tenant.api_logger)
+            await job_impl.request_cancel(ctx, record.payload, dict(record.side_effects or {}))
+        except Exception:
+            logger.exception("[%s] cancel: request_cancel failed for job %s", self._tenant.id, record.id)
 
     async def get_job_status(self, job_id: UUID) -> JobStatusResponse:
         record = await self._require_job(job_id)

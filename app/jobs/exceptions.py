@@ -20,3 +20,11 @@ class UnknownJobTypeError(JobError):
 
 class WorkerAuthError(JobError):
     """Raised when the worker service account cannot obtain a token."""
+
+
+class JobCancelledError(JobError):
+    """Raised when a running job observes a user cancel request."""
+
+
+class JobAlreadyClosedError(JobError):
+    """Raised when cancel is requested for a job that already finished or failed."""

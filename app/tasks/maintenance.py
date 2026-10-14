@@ -14,6 +14,7 @@ from app.celery_app import celery_app
 from app.jobs.context import job_context_from_tenant
 from app.jobs.stale_config import stale_after_seconds_for
 from app.jobs.exceptions import UnknownJobTypeError, WorkerAuthError
+from app.jobs.models import CANCELLED_BY_USER, JobStatus
 from app.jobs.registry import get_job_class
 from app.jobs.repository import JobRepository
 from app.jobs.worker_auth import get_worker_token
@@ -54,10 +55,14 @@ async def _reconcile_async() -> None:
 
 
 async def _reconcile_one(tenant, repo: JobRepository, job) -> None:
+    discard = job.status == JobStatus.CANCELLING
     try:
         job_impl = get_job_class(job.type)()
     except UnknownJobTypeError:
-        await repo.fail_job(job.id, STALE_JOB_ERROR)
+        if discard:
+            await repo.mark_cancelled(job.id, CANCELLED_BY_USER)
+        else:
+            await repo.fail_job(job.id, STALE_JOB_ERROR)
         return
 
     bearer_token = None
@@ -69,7 +74,14 @@ async def _reconcile_one(tenant, repo: JobRepository, job) -> None:
 
     try:
         ctx = job_context_from_tenant(tenant, bearer_token=bearer_token, logger=tenant.api_logger)
-        await job_impl.repair(ctx, job.payload, dict(job.side_effects or {}))
+        side_effects = dict(job.side_effects or {})
+        if discard:
+            await job_impl.cancel(ctx, job.payload, side_effects)
+        else:
+            await job_impl.repair(ctx, job.payload, side_effects)
     except Exception:
-        logger.exception("[%s] reconcile: repair failed for job %s", tenant.id, job.id)
-    await repo.fail_job(job.id, STALE_JOB_ERROR)
+        logger.exception("[%s] reconcile: cleanup failed for job %s", tenant.id, job.id)
+    if discard:
+        await repo.mark_cancelled(job.id, CANCELLED_BY_USER)
+    else:
+        await repo.fail_job(job.id, STALE_JOB_ERROR)

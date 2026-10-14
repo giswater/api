@@ -16,10 +16,10 @@ DEFAULT_POLL_MS: dict[str, int] = {"created": 5000, "running": 3000}
 
 def poll_interval_ms_for_job(job: JobRecord) -> int | None:
     """Return suggested client poll interval, or None when polling should stop."""
-    if job.status in (JobStatus.FINISHED, JobStatus.FAILED):
+    if job.status in (JobStatus.FINISHED, JobStatus.FAILED, JobStatus.CANCELLED):
         return None
     type_config = JOB_POLL_CONFIG.get(job.type, {})
-    status_key = job.status.value
+    status_key = "running" if job.status == JobStatus.CANCELLING else job.status.value
     if status_key in type_config:
         return type_config[status_key]
     return DEFAULT_POLL_MS.get(status_key)

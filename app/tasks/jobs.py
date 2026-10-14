@@ -7,13 +7,16 @@ or (at your option) any later version.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
+import threading
 from uuid import UUID
 
 from app.celery_app import celery_app
 from app.jobs.context import job_context_from_tenant
-from app.jobs.exceptions import WorkerAuthError
-from app.jobs.models import TERMINAL_STATUSES
+from app.jobs.exceptions import JobCancelledError, WorkerAuthError
+from app.jobs.models import CANCELLED_BY_USER, TERMINAL_STATUSES, JobStatus
 from app.jobs.progress import JobProgressReporter
 from app.jobs.registry import get_job_class
 from app.jobs.repository import JobRepository
@@ -21,6 +24,8 @@ from app.jobs.worker_auth import get_worker_token
 from app.tasks.runtime import get_tenant, run_async
 
 logger = logging.getLogger(__name__)
+
+_WATCH_INTERVAL_S = 1.0
 
 
 @celery_app.task(name="giswater.execute_job", bind=True, max_retries=0)
@@ -48,8 +53,9 @@ async def _execute_job_async(tenant_id: str, job_id: str) -> None:
 
     try:
         job_impl = get_job_class(record.type)()
-        progress = JobProgressReporter(repo, job_uuid, record.type)
-        ctx = await _build_context(tenant, repo, job_uuid, job_impl, progress)
+        cancel_event = threading.Event()
+        progress = JobProgressReporter(repo, job_uuid, record.type, cancel_event=cancel_event)
+        ctx = await _build_context(tenant, repo, job_uuid, job_impl, progress, cancel_event)
         if ctx is None:
             return
     except Exception as exc:
@@ -67,7 +73,7 @@ async def _execute_job_async(tenant_id: str, job_id: str) -> None:
     await _run_handler(repo, job_uuid, record, job_impl, ctx, progress)
 
 
-async def _build_context(tenant, repo: JobRepository, job_uuid, job_impl, progress):
+async def _build_context(tenant, repo: JobRepository, job_uuid, job_impl, progress, cancel_event=None):
     bearer_token = None
     if job_impl.requires_auth:
         try:
@@ -82,6 +88,7 @@ async def _build_context(tenant, repo: JobRepository, job_uuid, job_impl, progre
             bearer_token=bearer_token,
             logger=tenant.api_logger,
             progress=progress,
+            cancel_event=cancel_event,
         )
     except ValueError as exc:
         await repo.fail_job(job_uuid, str(exc))
@@ -90,23 +97,72 @@ async def _build_context(tenant, repo: JobRepository, job_uuid, job_impl, progre
 
 async def _run_handler(repo: JobRepository, job_uuid, record, job_impl, ctx, progress) -> None:
     side_effects = dict(record.side_effects or {})
+    cancel_event = getattr(ctx, "cancel_event", None) or threading.Event()
+    watch = asyncio.create_task(
+        _watch_cancel(repo, job_uuid, record.tenant_id, side_effects, cancel_event),
+    )
     try:
+        await _raise_if_cancel_requested(repo, job_uuid, record.tenant_id, cancel_event)
         result = await job_impl.run(ctx, record.payload, side_effects)
-        if side_effects:
-            await repo.update_side_effects(job_uuid, side_effects)
+        await _persist_side_effects(repo, job_uuid, side_effects)
         await progress.set_percentage(100.0, force=True)
         await repo.finish_job(job_uuid, result)
         logger.info("job %s finished (%s)", job_uuid, record.type)
+    except JobCancelledError:
+        logger.info("job %s cancelled (%s)", job_uuid, record.type)
+        await _persist_side_effects(repo, job_uuid, side_effects)
+        if side_effects.get("published"):
+            logger.warning("job %s cancelled after publish; keeping the committed result", job_uuid)
+            await repo.finish_job(job_uuid, {})
+            return
+        try:
+            await job_impl.cancel(ctx, record.payload, side_effects)
+        except Exception:
+            logger.exception("cancel cleanup failed for job %s", job_uuid)
+        await repo.mark_cancelled(job_uuid, CANCELLED_BY_USER)
     except Exception as exc:
         error_text = str(exc) or exc.__class__.__name__
         logger.exception("job %s failed (%s): %s", job_uuid, record.type, error_text)
-        if side_effects:
-            try:
-                await repo.update_side_effects(job_uuid, side_effects)
-            except Exception:
-                logger.exception("failed to persist side_effects for job %s", job_uuid)
+        await _persist_side_effects(repo, job_uuid, side_effects)
         try:
             await job_impl.repair(ctx, record.payload, side_effects)
         except Exception:
             logger.exception("repair failed for job %s", job_uuid)
         await repo.fail_job(job_uuid, error_text)
+    finally:
+        watch.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watch
+
+
+async def _watch_cancel(repo, job_uuid, tenant_id: str, side_effects: dict, cancel_event: threading.Event) -> None:
+    while not cancel_event.is_set():
+        await asyncio.sleep(_WATCH_INTERVAL_S)
+        try:
+            if side_effects:
+                await repo.update_side_effects(job_uuid, dict(side_effects))
+            current = await repo.get_job(job_uuid, tenant_id)
+        except Exception:
+            logger.exception("cancel watch failed for job %s", job_uuid)
+            continue
+        if current is not None and current.status == JobStatus.CANCELLING:
+            cancel_event.set()
+            return
+
+
+async def _raise_if_cancel_requested(repo, job_uuid, tenant_id: str, cancel_event: threading.Event) -> None:
+    if cancel_event.is_set():
+        raise JobCancelledError(CANCELLED_BY_USER)
+    current = await repo.get_job(job_uuid, tenant_id)
+    if current is not None and current.status == JobStatus.CANCELLING:
+        cancel_event.set()
+        raise JobCancelledError(CANCELLED_BY_USER)
+
+
+async def _persist_side_effects(repo, job_uuid, side_effects: dict) -> None:
+    if not side_effects:
+        return
+    try:
+        await repo.update_side_effects(job_uuid, side_effects)
+    except Exception:
+        logger.exception("failed to persist side_effects for job %s", job_uuid)

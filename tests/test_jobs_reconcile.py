@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -36,8 +37,13 @@ class _FakeJob:
     requires_auth = False
     max_running_seconds = None
 
+    cancelled = False
+
     async def repair(self, ctx, payload, side_effects):
         return None
+
+    async def cancel(self, ctx, payload, side_effects):
+        type(self).cancelled = True
 
 
 def _wire(monkeypatch, *, running, job_cls=_FakeJob):
@@ -51,6 +57,7 @@ def _wire(monkeypatch, *, running, job_cls=_FakeJob):
     repo = MagicMock()
     repo.list_running_jobs = AsyncMock(return_value=running)
     repo.fail_job = AsyncMock()
+    repo.mark_cancelled = AsyncMock()
     monkeypatch.setattr(maintenance, "JobRepository", lambda *_a, **_k: repo)
     monkeypatch.setattr(maintenance, "get_job_class", lambda _t: job_cls)
     monkeypatch.setattr("app.jobs.stale_config.get_job_class", lambda _t: job_cls)
@@ -69,6 +76,19 @@ def test_reconcile_fails_stale_jobs(monkeypatch):
     asyncio.run(maintenance._reconcile_async())
     repo.fail_job.assert_awaited_once()
     assert repo.fail_job.await_args.args[0] == stale.id
+
+
+def test_reconcile_cancelling_discards(monkeypatch):
+    stale = replace(_running_record(age_seconds=10_000), status=JobStatus.CANCELLING)
+    repo = _wire(monkeypatch, running=[stale])
+    monkeypatch.setattr(
+        "app.jobs.stale_config.global_settings",
+        __import__("types").SimpleNamespace(jobs_stale_after_seconds=7200),
+    )
+    asyncio.run(maintenance._reconcile_async())
+    assert _FakeJob.cancelled is True
+    repo.mark_cancelled.assert_awaited_once()
+    repo.fail_job.assert_not_awaited()
 
 
 def test_reconcile_ignores_fresh_jobs(monkeypatch):

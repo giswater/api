@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.jobs.exceptions import UnknownJobTypeError
+from app.jobs.exceptions import JobCancelledError, UnknownJobTypeError
 from app.jobs.models import JobRecord, JobStatus
 from app.tasks import jobs as jobs_task
 
@@ -33,21 +33,28 @@ def _record(*, status: JobStatus, job_type: str = "test_job") -> JobRecord:
     )
 
 
-def _make_job_class(*, fail: bool = False):
+def _make_job_class(*, fail: bool = False, abort: bool = False):
     class _FakeJobClass:
         requires_auth = False
         _fail = fail
+        _abort = abort
         ran = False
         repaired = False
+        cancelled = False
 
         async def run(self, ctx, payload, side_effects):
             type(self).ran = True
+            if type(self)._abort:
+                raise JobCancelledError("Cancelled by user")
             if type(self)._fail:
                 raise RuntimeError("boom")
             return {"ok": True}
 
         async def repair(self, ctx, payload, side_effects):
             type(self).repaired = True
+
+        async def cancel(self, ctx, payload, side_effects):
+            type(self).cancelled = True
 
     return _FakeJobClass
 
@@ -61,6 +68,7 @@ def _wire(monkeypatch, *, record, mark_running_result, job_cls):
     repo.mark_running = AsyncMock(return_value=mark_running_result)
     repo.finish_job = AsyncMock()
     repo.fail_job = AsyncMock()
+    repo.mark_cancelled = AsyncMock()
     repo.update_side_effects = AsyncMock()
     repo.update_progress = AsyncMock()
     monkeypatch.setattr(jobs_task, "JobRepository", lambda *_a, **_k: repo)
@@ -115,6 +123,19 @@ def test_execute_failure_repairs_and_fails(monkeypatch):
     asyncio.run(jobs_task._execute_job_async("test", str(record.id)))
     assert job_cls.repaired is True
     repo.fail_job.assert_awaited_once()
+    repo.finish_job.assert_not_awaited()
+
+
+def test_execute_cancel_discards_without_repair(monkeypatch):
+    record = _record(status=JobStatus.CREATED)
+    running = _record(status=JobStatus.RUNNING, job_type=record.type)
+    job_cls = _make_job_class(abort=True)
+    repo = _wire(monkeypatch, record=record, mark_running_result=running, job_cls=job_cls)
+    asyncio.run(jobs_task._execute_job_async("test", str(record.id)))
+    assert job_cls.cancelled is True
+    assert job_cls.repaired is False
+    repo.mark_cancelled.assert_awaited_once()
+    repo.fail_job.assert_not_awaited()
     repo.finish_job.assert_not_awaited()
 
 

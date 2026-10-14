@@ -12,7 +12,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Response
 
 from app.api.deps import TenantUserDep
-from app.jobs.exceptions import JobNotFoundError
+from app.auth.session import extract_bearer_token
+from app.jobs.exceptions import JobAlreadyClosedError, JobNotFoundError
 from app.jobs.service import JobService
 from app.schemas.jobs import JobResultResponse, JobStatusResponse
 
@@ -33,6 +34,25 @@ async def get_job_status(job_id: UUID, commons: TenantUserDep, response: Respons
         status_response = await JobService(tenant).get_job_status(job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    for key, value in _retry_after_header(status_response.poll_interval_ms).items():
+        response.headers[key] = value
+
+    return status_response
+
+
+@router.post("/{job_id}/cancel", summary="Cancel a job", response_model=JobStatusResponse)
+async def cancel_job(job_id: UUID, commons: TenantUserDep, response: Response):
+    tenant = commons["tenant"]
+    try:
+        status_response = await JobService(tenant).cancel_job(
+            job_id,
+            bearer_token=extract_bearer_token(commons["request"]),
+        )
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except JobAlreadyClosedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     for key, value in _retry_after_header(status_response.poll_interval_ms).items():
         response.headers[key] = value
