@@ -24,10 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JobService.create_job` enqueues Celery tasks after DB insert.
 - Job HTTP DTOs live in `app/schemas/jobs.py`; domain models stay in `app/jobs/models.py`.
 
-### Removed
-
-- Env vars `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_CONCURRENT_JOBS`.
-
 ### Fixed
 
 - Drop session temp tables when a pooled connection is returned, so a later request does not fail on objects owned by another role (mincut and other graph functions).
