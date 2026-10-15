@@ -64,7 +64,16 @@ Used only when evaluating tenant **`GET ${API_ROOT}/v1/ready`** (after the datab
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `GISWATER_DB_VERSION_CHECK` | `false` | When `true`, readiness compares `{DB_SCHEMA}.sys_version.giswater` to `GISWATER_DB_MIN_VERSION`. Returns **503** if missing or below minimum. |
-| `GISWATER_DB_MIN_VERSION` | `4.8.0` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Align with [README compatibility](../README.md#compatibility). |
+| `GISWATER_DB_MIN_VERSION` | `4.17.0` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Default matches [README compatibility](../README.md#compatibility). Override per deployment based on active endpoints. |
+
+### MCP
+
+Curated Model Context Protocol server mounted at `${API_ROOT}/v1/mcp/` (Streamable HTTP). Each tenant that enables it gets its own isolated FastMCP instance. Clients must authenticate with the same `Authorization` header the tenant `AUTH_MODE` expects.
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `MCP_ENABLED` | `true` | Process-wide switch. When `false`, `/mcp` returns 404 for every tenant. |
+| `MCP_TIMEOUT` | `60` | Seconds allowed for each in-process loopback call from an MCP tool into the REST API. |
 
 ### Rate limiting
 
@@ -162,7 +171,9 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_ROUTING` | `false` | External routing (Valhalla) integration. |
 | `API_CRM` | `false` | CRM / hydrometer-style endpoints. |
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
-| `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. Presence in the list enables the plugin. |
+| `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
+| `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
+| `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
 
 ### Database
 
@@ -212,11 +223,23 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 | `WORKER_KEYCLOAK_CLIENT_ID` | _(empty)_ | Worker service-account client id for background jobs (`client_credentials`). |
 | `WORKER_KEYCLOAK_CLIENT_SECRET` | _(empty)_ | Worker service-account client secret. |
 
+**Keycloak client checklist** (for the client named in `KEYCLOAK_CLIENT_ID`, required for Swagger OAuth and the token proxy):
+
+1. *Standard flow* ON — authorization-code button in Swagger UI.
+2. *Direct access grants* ON — username/password button in Swagger UI.
+3. *Valid redirect URIs* includes the exact `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs/oauth2-redirect` (in addition to `KEYCLOAK_CALLBACK_URI` if used elsewhere). Mid-host wildcards like `https://*.example.com/...` are **not** supported — only a trailing `*` (prefix match) or an exact URI.
+4. An **Audience** protocol mapper with *Included Client Audience* = the same client (`KEYCLOAK_CLIENT_ID`) and *Add to access token* ON. Without it, `verify_token` rejects every token with `401 Invalid token` because Keycloak does not add the client to `aud` automatically.
+5. LDAP users authenticate through the realm's LDAP federation provider. The Direct Grant Flow must not force OTP, and the user must have no pending required actions (otherwise use the authorization-code flow).
+6. The API issues `SET ROLE <preferred_username>` on DB calls; each user needs a matching PostgreSQL role.
+
+**Local IdP:** `docker compose --profile keycloak up -d keycloak` starts a preconfigured Keycloak on `http://auth.localhost:8080` (realm/client/user ready for Swagger). See [docker/keycloak/README.md](../docker/keycloak/README.md).
+
 ---
 
 ## See also
 
 - [`.env.example`](../.env.example) — copy-paste root defaults
+- [API request examples](API_REQUESTS.md) — curl/httpx for `none` / `basic` / `keycloak` + admin
 - [Deployment checklist](DEPLOYMENT_CHECKLIST.md)
 - [README – Configuration](../README.md#configuration)
 - [README – Compatibility](../README.md#compatibility)

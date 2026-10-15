@@ -86,7 +86,7 @@ class WaterbalanceService:
     """
         parameters = None
         if dma_id:
-            sql += " AND w.dma_id = ANY(%s)"
+            sql += " AND d.dma_id = ANY(%s)"
             parameters = (dma_id,)
         waterbalance = await execute_sql(
             self.ctx.logger,

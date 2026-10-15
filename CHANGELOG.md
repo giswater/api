@@ -28,6 +28,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Env vars `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_CONCURRENT_JOBS`.
 
+### Fixed
+
+- Drop session temp tables when a pooled connection is returned, so a later request does not fail on objects owned by another role (mincut and other graph functions).
+
+## [1.8.1] - 2026-09-28
+
+### Fixed
+
+- Only upgrade once, don't let all workers try to upgrade at the same time.
+
+## [1.8.0] - 2026-09-23
+
+### Added
+
+- **Curated MCP server** at `${API_ROOT}/v1/mcp/` (Streamable HTTP). One FastMCP instance per tenant, task-shaped tools over the REST API, gated by process `MCP_ENABLED` and per-tenant `API_MCP`.
+- **`GET ${API_ROOT}/v1/schemas`**: list Giswater project schemas (`sys_version`) with `project_type`, version, and optional `epsg`.
+- **`GET ${API_ROOT}/v1/crm/hydrometers`**: read hydrometers (`code` / `connecId` / `dmaId` / `mincutId` / `customerCode` / `limit`). Joins `v_hydrometer` / `ve_connec`; rows expose `connec_id`, `dma_id`, `customer_code`.
+- **`/features` endpoints**: typed filters for nodes/arcs/links/connecs/gullies (list + GeoJSON collection + by-id fields, form, and GeoJSON Feature), gated by `API_FEATURES`.
+- **`GET ${API_ROOT}/v1/streets`** and **`GET ${API_ROOT}/v1/streets/{id}/arcs`**: street-axis search and candidate arcs (`streetaxis_id` union spatial buffer). Gated by `API_BASIC`.
+
+### Changed
+
+- **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.0** (refactored `gw_fct_getfeatures` with `featureType` / `outputFormat`). Compatibility table: **1.7.x → Giswater DB ≥ 4.17.0**.
+- **`gw_fct_getprofilevalues` extras key** `midNodes` → `midFeatures` (`app/services/om/profile_service.py`).
+- **Profile arc `omunit_id`** is optional (widen). Rows that omit it no longer 500.
+- **Hydrometer writes** map REST camelCase to `gw_fct_set_hydrometers` keys (`hydro_number`, `feature_customer_code`, `state_id`, …). `customerCode` is the CRM link; `connecId` is resolved to `ve_connec.customer_code`.
+- **Mincut request bodies** (`POST /om/mincuts`, `PATCH /om/mincuts/{id}`, `POST .../start`, `end`, valve toggles) take a JSON object (`Mincut*Params`). Create takes `arcId` or `coordinates` (exactly one). Toggle routes still accept a bare boolean.
+
+### Deprecated
+
+- **`GET /om/dmas/{dma_id}/connecs`**: prefer `GET /features/connecs?dma_id={dma_id}`.
+- **`middle_nodes`** on `POST /om/profiles` (`DEPRECATED #37`; removal in **2.0.0**). Use `middle_features`. If both are sent, `middle_features` wins.
+- **Hydrometer `connecId` on write**: prefer `customerCode`. `connecId` is still resolved to the connec's `customer_code`.
+- **Bare boolean body** on `POST /om/mincuts/{id}/valves/{valve_id}/toggle-unaccess` and `toggle-status`. Prefer `{"use_psectors": false}`. Scalar `true`/`false` is still accepted.
+
+## [1.7.0] - 2026-08-05
+
+### Added
+
+- **Swagger UI OAuth2** for tenant docs (`${API_ROOT}/v1/docs`): Authorize schemes follow `AUTH_MODE` — `keycloakPassword` (direct access grant) and `keycloakAuthCode` (authorization-code + PKCE redirect) when `AUTH_MODE=keycloak`, plus existing Basic schemes. See [`app/core/openapi.py`](app/core/openapi.py).
+- **`POST ${API_ROOT}/v1/auth/token`** Keycloak token proxy (`app/api/v1/endpoints/auth.py`): password / authorization_code / refresh_token grants; injects `KEYCLOAK_CLIENT_SECRET` server-side so the browser never sees it. Rate-limited.
+- **Local Keycloak** Compose profile (`docker compose --profile keycloak up -d keycloak`): imports realm `giswater` / client `giswater-api` / user `test`/`test` for Swagger Authorize. Docs: [`docker/keycloak/README.md`](docker/keycloak/README.md).
+- **[`docs/API_REQUESTS.md`](docs/API_REQUESTS.md)**: curl/httpx examples for every `AUTH_MODE` and the platform admin API.
+
+### Changed
+
+- Dependency bumps: `cryptography` 46.0.7 → 50.0.0, `pyjwt` 2.12.1 → 2.13.0, `pytest` 8.3.4 → 9.0.3; add `python-multipart` (required by the token proxy form body).
+
+### Fixed
+
+- Keycloak Docker realm import and valid redirect URIs for the Swagger OAuth2 redirect path.
+
 ## [1.6.2] - 2026-07-30
 
 ### Fixed
@@ -369,7 +421,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.6.0...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.8.1...main
+[1.8.1]: https://github.com/Giswater/giswater-api/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/Giswater/giswater-api/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/Giswater/giswater-api/compare/v1.6.2...v1.7.0
+[1.6.2]: https://github.com/Giswater/giswater-api/compare/v1.6.1...v1.6.2
+[1.6.1]: https://github.com/Giswater/giswater-api/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/Giswater/giswater-api/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Giswater/giswater-api/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Giswater/giswater-api/compare/v1.3.2...v1.4.0

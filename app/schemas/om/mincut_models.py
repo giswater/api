@@ -5,14 +5,15 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_geojson import FeatureCollectionModel
-from typing import Optional, Dict, Any, List, Literal
+from typing import Optional, Dict, Any, List, Literal, Self
 from datetime import datetime
 
 from ..common import (
     BaseAPIResponse,
     Body,
+    CoordinatesModel,
     Data,
     Geometry,
     Info,
@@ -75,6 +76,57 @@ class MincutExecParams(BaseModel):
     )
 
 
+class MincutPsectorsParams(BaseModel):
+    use_psectors: bool = Field(False, title="Use Psectors", description="Whether to use the planified network or not")
+
+
+class MincutToggleParams(MincutPsectorsParams):
+    """Toggle body. A bare boolean is the pre-object contract and is still accepted."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_legacy_use_psectors(cls, data: Any) -> Any:
+        # DEPRECATED: prefer {"use_psectors": false}. Scalar boolean body still accepted.
+        if isinstance(data, bool):
+            return {"use_psectors": data}
+        return data
+
+
+class MincutCreateParams(MincutPsectorsParams):
+    """Create an unplanned mincut from an arc id or a map click. Exactly one target."""
+
+    arcId: Optional[int] = Field(None, description="Arc id. Mutually exclusive with coordinates.", examples=[132])
+    coordinates: Optional[CoordinatesModel] = Field(
+        None, title="Coordinates", description="Click point. Mutually exclusive with arcId."
+    )
+    plan: Optional[MincutPlanParams] = Field(None, title="Plan", description="Plan of the mincut")
+
+    @model_validator(mode="after")
+    def xor_target(self) -> Self:
+        if (self.arcId is None) == (self.coordinates is None):
+            raise ValueError("Provide exactly one of arcId or coordinates")
+        return self
+
+
+class MincutUpdateParams(MincutPsectorsParams):
+    plan: Optional[MincutPlanParams] = Field(None, title="Plan", description="Plan parameters")
+    exec: Optional[MincutExecParams] = Field(None, title="Execution", description="Execution parameters")
+
+
+class MincutStartParams(MincutPsectorsParams):
+    plan: Optional[MincutPlanParams] = Field(None, title="Plan", description="Plan parameters")
+
+
+class MincutEndParams(MincutPsectorsParams):
+    shutoff_required: Optional[bool] = Field(
+        True,
+        title="Shutoff Required",
+        description="Whether the mincut required shutting off the water supply to consumers",
+        examples=[True],
+    )
+    exec: Optional[MincutExecParams] = Field(None, title="Execution", description="Execution parameters")
+
+
 # endregion
 
 # region Response models
@@ -98,7 +150,11 @@ class MincutCreateData(Data):
     info: Optional[Info] = Field(None, description="Information about the process")
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial point")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
-    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut not proposed valve")
+    mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
+    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
+        None, description="Mincut not proposed / do-not-operate valve"
+    )
     mincutNode: Optional[FeatureCollectionModel] = Field(None, description="Mincut node")
     mincutConnec: Optional[FeatureCollectionModel] = Field(None, description="Mincut connecs")
     mincutArc: Optional[FeatureCollectionModel] = Field(None, description="Mincut arcs")
@@ -139,7 +195,11 @@ class MincutDialogData(Data):
     info: Optional[Info] = Field(None, description="Information about the process")
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial point")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
-    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut not proposed valve")
+    mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
+    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
+        None, description="Mincut not proposed / do-not-operate valve"
+    )
     mincutNode: Optional[FeatureCollectionModel] = Field(None, description="Mincut node")
     mincutConnec: Optional[FeatureCollectionModel] = Field(None, description="Mincut connecs")
     mincutArc: Optional[FeatureCollectionModel] = Field(None, description="Mincut arcs")
@@ -180,7 +240,11 @@ class MincutUpdateData(Data):
     info: Optional[Info] = Field(None, description="Information about the process")
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial point")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
-    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut not proposed valve")
+    mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
+    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
+        None, description="Mincut not proposed / do-not-operate valve"
+    )
     mincutNode: Optional[FeatureCollectionModel] = Field(None, description="Mincut node")
     mincutConnec: Optional[FeatureCollectionModel] = Field(None, description="Mincut connecs")
     mincutArc: Optional[FeatureCollectionModel] = Field(None, description="Mincut arcs")
@@ -214,11 +278,15 @@ class MincutToggleValveUnaccessData(Data):
     mincutState: int = Field(..., description="Mincut state", examples=[1])
     mincutInit: FeatureCollectionModel = Field(..., description="Mincut initial point")
     mincutProposedValve: FeatureCollectionModel = Field(..., description="Mincut proposed valve")
-    mincutNotProposedValve: FeatureCollectionModel = Field(..., description="Mincut not proposed valve")
+    mincutUnaccessValve: FeatureCollectionModel = Field(..., description="Mincut unaccessible valve")
+    mincutChangestatusValve: FeatureCollectionModel = Field(..., description="Mincut change-status valve")
+    mincutNotProposedValve: FeatureCollectionModel = Field(
+        ..., description="Mincut not proposed / do-not-operate valve"
+    )
     mincutNode: FeatureCollectionModel = Field(..., description="Mincut node")
     mincutConnec: FeatureCollectionModel = Field(..., description="Mincut connecs")
     mincutArc: FeatureCollectionModel = Field(..., description="Mincut arcs")
-    tiled: bool = Field(..., description="Tiled", examples=[True])
+    tiled: Optional[bool] = Field(None, description="Tiled", examples=[True])
     geometry: Geometry = Field(..., description="Extent of the mincut")
 
 
@@ -250,11 +318,15 @@ class MincutToggleValveStatusData(Data):
     mincutState: int = Field(..., description="Mincut state", examples=[1])
     mincutInit: FeatureCollectionModel = Field(..., description="Mincut initial point")
     mincutProposedValve: FeatureCollectionModel = Field(..., description="Mincut proposed valve")
-    mincutNotProposedValve: FeatureCollectionModel = Field(..., description="Mincut not proposed valve")
+    mincutUnaccessValve: FeatureCollectionModel = Field(..., description="Mincut unaccessible valve")
+    mincutChangestatusValve: FeatureCollectionModel = Field(..., description="Mincut change-status valve")
+    mincutNotProposedValve: FeatureCollectionModel = Field(
+        ..., description="Mincut not proposed / do-not-operate valve"
+    )
     mincutNode: FeatureCollectionModel = Field(..., description="Mincut node")
     mincutConnec: FeatureCollectionModel = Field(..., description="Mincut connecs")
     mincutArc: FeatureCollectionModel = Field(..., description="Mincut arcs")
-    tiled: bool = Field(..., description="Tiled", examples=[True])
+    tiled: Optional[bool] = Field(None, description="Tiled", examples=[True])
     geometry: Geometry = Field(..., description="Extent of the mincut")
 
 
@@ -314,7 +386,11 @@ class MincutEndData(Data):
     mincutState: Optional[int] = Field(None, description="Mincut state")
     mincutInit: Optional[FeatureCollectionModel] = Field(None, description="Mincut initial")
     mincutProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut proposed valve")
-    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut not proposed valve")
+    mincutUnaccessValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut unaccessible valve")
+    mincutChangestatusValve: Optional[FeatureCollectionModel] = Field(None, description="Mincut change-status valve")
+    mincutNotProposedValve: Optional[FeatureCollectionModel] = Field(
+        None, description="Mincut not proposed / do-not-operate valve"
+    )
     mincutNode: Optional[FeatureCollectionModel] = Field(None, description="Mincut node")
     mincutConnec: Optional[FeatureCollectionModel] = Field(None, description="Mincut connecs")
     mincutArc: Optional[FeatureCollectionModel] = Field(None, description="Mincut arcs")

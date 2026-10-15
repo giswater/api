@@ -9,7 +9,7 @@ import asyncio
 import os
 import uuid
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 from urllib.parse import quote
 
 import pytest
@@ -49,7 +49,7 @@ def test_reset_pooled_connection_runs_reset_role():
     async def _run():
         conn = AsyncMock()
         await DatabaseManager._reset_pooled_connection(conn)
-        conn.execute.assert_awaited_once_with("RESET ROLE")
+        assert conn.execute.await_args_list == [call("RESET ROLE"), call("DISCARD TEMP")]
         conn.commit.assert_awaited_once_with()
 
     asyncio.run(_run())
@@ -170,6 +170,55 @@ def test_pool_reset_clears_set_role_between_checkouts():
                         async with conn.cursor() as cur:
                             await cur.execute("RESET ROLE")
                             await cur.execute(f"DROP ROLE IF EXISTS {role}")
+                        await conn.commit()
+            finally:
+                await db.close()
+
+    asyncio.run(_run())
+
+
+def test_pool_reset_discards_temp_tables_between_roles():
+    """Temp objects created under one role must not block the next role on the same connection."""
+    suffix = uuid.uuid4().hex[:8]
+    role_a = f"gwapi_tmp_a_{suffix}"
+    role_b = f"gwapi_tmp_b_{suffix}"
+    tid = f"pool-temp-{suffix}"
+
+    async def _run():
+        db = _live_db_manager(tid)
+        dbname = None
+        try:
+            async with db.get_db() as conn:
+                assert conn is not None, "Postgres not available"
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT current_database()")
+                    dbname = (await cur.fetchone())[0]
+                    await cur.execute(f"CREATE ROLE {role_a} NOLOGIN")
+                    await cur.execute(f"CREATE ROLE {role_b} NOLOGIN")
+                    await cur.execute(f'GRANT TEMPORARY ON DATABASE "{dbname}" TO {role_a}, {role_b}')
+                    await cur.execute(f"SET ROLE {role_a}")
+                    await cur.execute("CREATE TEMP TABLE IF NOT EXISTS gwapi_tmp_x (id int)")
+                await conn.commit()
+
+            async with db.get_db() as conn:
+                assert conn is not None
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT to_regclass('pg_temp.gwapi_tmp_x')")
+                    assert (await cur.fetchone())[0] is None
+                    await cur.execute(f"SET ROLE {role_b}")
+                    await cur.execute("CREATE TEMP TABLE IF NOT EXISTS gwapi_tmp_x (id int)")
+                    await cur.execute("ALTER TABLE gwapi_tmp_x ADD COLUMN IF NOT EXISTS y int")
+                await conn.commit()
+        finally:
+            try:
+                async with db.get_db() as conn:
+                    if conn is not None:
+                        async with conn.cursor() as cur:
+                            await cur.execute("RESET ROLE")
+                            if dbname is not None:
+                                await cur.execute(f'REVOKE TEMPORARY ON DATABASE "{dbname}" FROM {role_a}, {role_b}')
+                            await cur.execute(f"DROP ROLE IF EXISTS {role_a}")
+                            await cur.execute(f"DROP ROLE IF EXISTS {role_b}")
                         await conn.commit()
             finally:
                 await db.close()

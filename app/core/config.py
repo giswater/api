@@ -151,13 +151,17 @@ class GlobalSettings:
 
     # DB compatibility (optional readiness gate; see GISWATER_DB_* env vars)
     giswater_db_version_check: bool = False
-    giswater_db_min_version: str = "4.8.0"
+    giswater_db_min_version: str = "4.17.0"
 
     # Alembic migrations for the API-owned `gwapi` schema.
     # When True, `alembic upgrade head` runs per tenant on load. Set False to
     # defer schema changes to a controlled window (`giswater-api db upgrade`).
     db_auto_migrate: bool = True
     db_migrate_timeout: float = 30.0
+
+    # MCP (per-tenant Streamable HTTP at ${API_ROOT}/v1/mcp/)
+    mcp_enabled: bool = True
+    mcp_timeout: float = 60.0
 
     # Legacy aliases (kept for the duration of the multi-tenant migration).
     @property
@@ -183,6 +187,8 @@ class TenantSettings:
     api_routing: bool = False
     api_crm: bool = False
     api_epa: bool = False
+    api_features: bool = False
+    api_mcp: bool = False
     enabled_plugins: frozenset[str] = frozenset()
 
     # Database
@@ -300,9 +306,11 @@ def _build_global(env: Mapping[str, str | None]) -> GlobalSettings:
         platform_keycloak_client_id=env.get("PLATFORM_KEYCLOAK_CLIENT_ID") or None,
         platform_keycloak_client_secret=env.get("PLATFORM_KEYCLOAK_CLIENT_SECRET") or None,
         giswater_db_version_check=_to_bool(env.get("GISWATER_DB_VERSION_CHECK"), False),
-        giswater_db_min_version=(env.get("GISWATER_DB_MIN_VERSION") or "4.8.0"),
+        giswater_db_min_version=(env.get("GISWATER_DB_MIN_VERSION") or "4.17.0"),
         db_auto_migrate=_to_bool(env.get("DB_AUTO_MIGRATE"), True),
         db_migrate_timeout=_to_float(env.get("DB_MIGRATE_TIMEOUT"), 30.0),
+        mcp_enabled=_to_bool(env.get("MCP_ENABLED"), True),
+        mcp_timeout=_to_float(env.get("MCP_TIMEOUT"), 60.0),
     )
 
 
@@ -317,6 +325,8 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         api_routing=_to_bool(env.get("API_ROUTING"), False),
         api_crm=_to_bool(env.get("API_CRM"), False),
         api_epa=_to_bool(env.get("API_EPA"), False),
+        api_features=_to_bool(env.get("API_FEATURES"), False),
+        api_mcp=_to_bool(env.get("API_MCP"), False),
         enabled_plugins=_to_plugin_list(env.get("ENABLED_PLUGINS")),
         db_host=(env.get("DB_HOST") or "localhost"),
         db_port=(env.get("DB_PORT") or "5432"),

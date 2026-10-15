@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.auth import verify_admin
 from app.core.config import global_settings
 from app.core.constants import STATIC_PREFIX
+from app.schemas.common import SchemasResponse
 from app.services.system_service import SystemService
 from app.utils.rate_limit import create_rate_limiter
 
@@ -94,6 +95,15 @@ async def get_db_logs(
 )
 async def logs_ui():
     return HTMLResponse(_LOGS_UI_HTML)
+
+
+@router.get(
+    "/schemas",
+    description="List Giswater project schemas on this tenant (those with sys_version).",
+    response_model=SchemasResponse,
+)
+async def list_schemas(request: Request):
+    return await SystemService(_tenant(request)).list_schemas()
 
 
 @router.get(

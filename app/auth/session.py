@@ -6,6 +6,7 @@ or (at your option) any later version.
 """
 
 import asyncio
+import logging
 import secrets
 import time
 from typing import Annotated, Optional
@@ -20,7 +21,10 @@ from ..core.config import global_settings
 from .users import verify_credentials
 from .schemas import ApiUser
 
-_basic = HTTPBasic(auto_error=False)
+logger = logging.getLogger(__name__)
+
+_basic = HTTPBasic(auto_error=False, scheme_name="tenantBasic")
+_admin_basic = HTTPBasic(auto_error=False, scheme_name="adminBasic")
 
 
 def extract_bearer_token(request: Request) -> str | None:
@@ -58,6 +62,7 @@ def verify_token(token: str, idp: FastAPIKeycloak) -> ApiUser:
             audience=idp.client_id,
         )
     except jwt.PyJWTError as exc:
+        logger.warning("Tenant token rejected: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid token") from exc
     username = payload.get("preferred_username") or payload.get("sub") or "unknown"
     return ApiUser(
@@ -188,7 +193,7 @@ async def _verify_platform_token(token: str) -> Optional[str]:
 
 async def verify_admin(
     request: Request,
-    credentials: Optional[HTTPBasicCredentials] = Depends(_basic),
+    credentials: Optional[HTTPBasicCredentials] = Depends(_admin_basic),
 ) -> str:
     """Authorize an admin caller via HTTP Basic and/or platform Keycloak.
 

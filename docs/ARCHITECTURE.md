@@ -28,6 +28,7 @@ app/
     procedure.py          # run_procedure, ensure_procedure_accepted helpers
     admin/                # tenant_service, user_service
     basic_service.py      # basic GIS endpoints
+    features_service.py   # feature collections (nodes/arcs/links/connecs/gullies)
     crm_service.py        # hydrometer CRUD
     om/                   # flow, profile, mincut, dma, mapzones, waterbalance
     epa/                  # dscenario_service
@@ -65,7 +66,14 @@ app/
     host_middleware.py    # Host header -> tenant resolution
   middleware/
     request_logging.py    # HTTP request logging middleware
-  schemas/                # Pydantic request/response models (basic/ crm/ om/ routing/ epa/, admin.py, jobs.py, common.py)
+    mcp/                    # curated MCP server (per-tenant FastMCP, loopback TenantApi)
+      client.py             # in-process httpx ASGI client + auth forwarding
+      registry.py           # @tool decorator
+      runtime.py            # TenantMcp lifespan + /mcp dispatcher
+      server.py             # build_tenant_mcp
+      shaping.py            # envelope unwrap / row / FeatureCollection helpers
+      tools/                # one module per domain
+    schemas/                # Pydantic request/response models (basic/ crm/ om/ routing/ epa/, admin.py, jobs.py, common.py)
   utils/                  # dependency-light helpers (no DB imports)
     body.py               # create_body_dict, create_api_response, handle_procedure_result
     version.py            # pure version string comparison

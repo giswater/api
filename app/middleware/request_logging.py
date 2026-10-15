@@ -62,6 +62,7 @@ LOG_HEADER_ALLOWLIST = {
     "x-forwarded-for",
     "x-real-ip",
     "x-request-id",
+    "x-mcp-tool",
 }
 
 

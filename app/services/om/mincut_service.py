@@ -61,21 +61,24 @@ class MincutService:
 
     async def create_mincut(
         self,
-        coordinates: CoordinatesModel,
+        coordinates: CoordinatesModel | None,
         plan: Optional[MincutPlanParams],
         use_psectors: bool,
+        arc_id: int | None = None,
     ) -> dict:
-        coordinates_dict = coordinates.model_dump()
         plan_dict = plan.model_dump(exclude_unset=True) if plan else {}
         if plan_dict.get("anl_cause"):
             plan_dict["anl_cause"] = MINCUT_CAUSE_VALUES.get(plan_dict["anl_cause"])
         extras = {
             "action": "mincutNetwork",
             "usePsectors": use_psectors,
-            "coordinates": coordinates_dict,
             "status": "check",
             **plan_dict,
         }
+        if arc_id is not None:
+            extras["arcId"] = arc_id
+        else:
+            extras["coordinates"] = coordinates.model_dump()
         body = create_body_dict(
             device=self.ctx.device,
             client_extras={"tiled": True},
@@ -115,6 +118,7 @@ class MincutService:
     async def valve_unaccess(self, mincut_id: int, valve_id: int, use_psectors: bool) -> dict:
         body = create_body_dict(
             device=self.ctx.device,
+            client_extras={"tiled": True},
             extras={
                 "action": "mincutValveUnaccess",
                 "nodeId": valve_id,
@@ -128,6 +132,7 @@ class MincutService:
     async def valve_toggle_status(self, mincut_id: int, valve_id: int, use_psectors: bool) -> dict:
         body = create_body_dict(
             device=self.ctx.device,
+            client_extras={"tiled": True},
             extras={
                 "action": "mincutChangeValveStatus",
                 "nodeId": valve_id,

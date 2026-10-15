@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from starlette.routing import BaseRoute
 
 from app.api.deps import PLUGIN_BY_ENDPOINT, require_feature
-from app.api.v1.endpoints import basic, crm, system, jobs
+from app.api.v1.endpoints import auth, basic, crm, features, streets, system, jobs
 from app.api.v1.endpoints.epa import dscenario
 from app.api.v1.endpoints.om import flow, mincut, profile, waterbalance
 from app.api.v1.endpoints.om.mapzones import dma, dqa, omunit, omzone, presszone, sector
@@ -22,6 +22,8 @@ from app.tenancy.registry import Tenant
 # Tuple list: `APIRouter` is not hashable in Python 3.13+ (cannot use as dict keys).
 ROUTER_FEATURES: list[tuple[APIRouter, str]] = [
     (basic.router, "api_basic"),
+    (streets.router, "api_basic"),
+    (features.router, "api_features"),
     (profile.router, "api_profile"),
     (flow.router, "api_flow"),
     (mincut.router, "api_mincut"),
@@ -45,6 +47,9 @@ for _rtr, _flag in ROUTER_FEATURES:
         if callable(ep):
             FEATURE_BY_ENDPOINT[ep] = _flag
 
+# Endpoints only meaningful when the tenant uses Keycloak.
+KEYCLOAK_ONLY_ENDPOINTS = frozenset({auth.token})
+
 
 def register_v1(tenant_app: FastAPI) -> None:
     """Include all v1 routers on the tenant app, feature-gated, plus the system router."""
@@ -52,6 +57,7 @@ def register_v1(tenant_app: FastAPI) -> None:
         tenant_app.include_router(router, dependencies=[Depends(require_feature(flag))])
     tenant_app.include_router(system.router)
     tenant_app.include_router(jobs.router)
+    tenant_app.include_router(auth.router)
 
 
 def tenant_openapi_routes(tenant_app: FastAPI, tenant: Tenant) -> list[BaseRoute]:
@@ -61,6 +67,8 @@ def tenant_openapi_routes(tenant_app: FastAPI, tenant: Tenant) -> list[BaseRoute
         ep = getattr(route, "endpoint", None)
         if not callable(ep):
             out.append(route)
+            continue
+        if ep in KEYCLOAK_ONLY_ENDPOINTS and tenant.settings.auth_mode != "keycloak":
             continue
         plugin_id = PLUGIN_BY_ENDPOINT.get(ep)
         if plugin_id is not None:
