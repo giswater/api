@@ -158,7 +158,7 @@ def test_role_connection_rollback_clears_role_and_uncommitted_work():
                     async with conn.cursor() as cur:
                         await cur.execute("SELECT current_user")
                         assert (await cur.fetchone())[0] == role
-                        await cur.execute(f"CREATE TABLE {table} (id int)")
+                        await cur.execute(f"CREATE TEMP TABLE {table} (id int)")
                     raise RuntimeError("boom")
 
             async with db.get_db() as conn:
