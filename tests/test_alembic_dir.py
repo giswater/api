@@ -15,6 +15,7 @@ def test_alembic_ini_exists():
     assert ini.is_file()
     assert (ini.parent / "alembic" / "env.py").is_file()
     assert (ini.parent / "alembic" / "versions" / "0001_gwapi_initial.py").is_file()
+    assert (ini.parent / "alembic" / "versions" / "0002_gwapi_jobs.py").is_file()
 
 
 def test_build_alembic_config_uses_project_ini():
@@ -29,4 +30,4 @@ def test_build_alembic_config_escapes_percent_in_database_url():
 
 
 def test_head_revision_is_latest():
-    assert head_revision() == "0001_gwapi_initial"
+    assert head_revision() == "0002_gwapi_jobs"

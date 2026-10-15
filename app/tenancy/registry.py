@@ -103,6 +103,10 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("API_EPA", settings.api_epa),
         ("API_FEATURES", settings.api_features),
         ("API_MCP", settings.api_mcp),
+        (
+            "ENABLED_PLUGINS",
+            ",".join(sorted(settings.enabled_plugins)) if settings.enabled_plugins else None,
+        ),
         ("DB_HOST", settings.db_host),
         ("DB_PORT", settings.db_port),
         ("DB_NAME", settings.db_name),
@@ -128,6 +132,8 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("KEYCLOAK_ADMIN_CLIENT_ID", settings.keycloak_admin_client_id),
         ("KEYCLOAK_ADMIN_CLIENT_SECRET", settings.keycloak_admin_client_secret),
         ("KEYCLOAK_CALLBACK_URI", settings.keycloak_callback_uri),
+        ("WORKER_KEYCLOAK_CLIENT_ID", settings.worker_keycloak_client_id),
+        ("WORKER_KEYCLOAK_CLIENT_SECRET", settings.worker_keycloak_client_secret),
     )
     lines = [f"{key}={_format_value(value)}" for key, value in fields if value is not None]
     return "\n".join(lines) + "\n"

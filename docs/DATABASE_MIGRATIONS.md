@@ -1,10 +1,11 @@
 # Database migrations (`gwapi` schema)
 
 The API owns a single Postgres schema, `gwapi`, in each tenant database. It holds
-the basic-auth tables (`users`, `roles`, `user_roles`) and the audit log tables
-(`http_logs`, `db_logs`). Its layout is managed by [Alembic](https://alembic.sqlalchemy.org/)
-with plain SQL migrations — there are no ORM models, and the application keeps
-using psycopg for all runtime queries.
+the basic-auth tables (`users`, `roles`, `user_roles`), the audit log tables
+(`http_logs`, `db_logs`), and the background jobs table (`jobs`). Its layout is
+managed by [Alembic](https://alembic.sqlalchemy.org/) with plain SQL migrations —
+there are no ORM models, and the application keeps using psycopg for all runtime
+queries.
 
 The Giswater business schema (`DB_SCHEMA`, e.g. `ws_40`) is **not** owned by the
 API and is installed/upgraded separately.
@@ -22,10 +23,11 @@ API and is installed/upgraded separately.
 
 ## When migrations run
 
-On tenant load (startup, reload, create/update), `ensure_tenant_database` runs if
-logging is enabled or the tenant uses basic auth. With `DB_AUTO_MIGRATE=true`
+On tenant load (startup, reload, create/update), when the tenant has a DB
+connection pool, `ensure_tenant_database` runs. With `DB_AUTO_MIGRATE=true`
 (the default) it runs `alembic upgrade head`, then ensures the current-month log
-partitions and bootstraps the first user.
+partitions (if logging is enabled) and bootstraps the first basic-auth user
+(when applicable).
 
 Migration failures are **non-fatal**: the tenant still loads, and the legacy
 schema resolver keeps the API serving against the old `log` schema until the
@@ -33,27 +35,27 @@ issue is fixed.
 
 ```mermaid
 flowchart TD
-    A[tenant load] --> B{log enabled or basic auth?}
+    A[tenant load] --> B{DB pool?}
     B -->|no| Z[skip]
     B -->|yes| C{DB_AUTO_MIGRATE?}
     C -->|true| D[alembic upgrade head]
     C -->|false| E[log info + warn if behind]
-    D --> F[ensure current-month partitions]
+    D --> F[ensure current-month partitions if logging]
     E --> F
     F --> G{basic auth?}
     G -->|yes| H[maybe_bootstrap_user]
     G -->|no| Z2[done]
 ```
 
-## Fresh install vs upgrade from the `log` schema
-
-The single shipped revision is idempotent and covers both cases:
+## Revisions
 
 - `0001_gwapi_initial` — creates the `gwapi` schema, auth tables (already in
   `gwapi` on 1.4.0), and audit log tables. On upgrade from 1.4.0 it relocates
   legacy `log.gw_api_logs*` into `gwapi`, renames them to `http_logs` / `db_logs`
   (moving partitions and preserving all rows) when present, otherwise creates the
   log tables fresh in `gwapi`, then drops the now-empty `log` schema.
+- `0002_gwapi_jobs` — creates `gwapi.jobs` and its indexes for the Celery job
+  framework.
 
 ### Legacy `log` schema compatibility (DEPRECATED #28)
 

@@ -5,9 +5,10 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from typing import Annotated, Literal
+from collections.abc import Callable
+from typing import Annotated, Any, Literal
 
-from fastapi import Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
 
 from app.auth import get_current_user
 from app.auth.schemas import ApiUser
@@ -91,6 +92,25 @@ async def common_parameters(
 CommonsDep = Annotated[dict, Depends(common_parameters)]
 
 
+async def tenant_user_parameters(
+    request: Request,
+    current_user: Annotated[ApiUser, Depends(get_current_user)],
+):
+    """Auth + tenant only (no schema / device / lang). Used by job status polls."""
+    tenant = _get_tenant(request)
+    return {
+        "request": request,
+        "user": current_user,
+        "user_id": current_user.preferred_username,
+        "tenant": tenant,
+        "db_manager": tenant.db_manager,
+        "api_version": request.app.version,
+    }
+
+
+TenantUserDep = Annotated[dict, Depends(tenant_user_parameters)]
+
+
 def require_feature(flag: str):
     """Router-level dep that 404s when the tenant has the API toggle off."""
 
@@ -100,3 +120,30 @@ def require_feature(flag: str):
             raise HTTPException(status_code=404, detail="Feature disabled")
 
     return _check
+
+
+PLUGIN_BY_ENDPOINT: dict[Callable[..., Any], str] = {}
+
+
+def _track_plugin_router(router: APIRouter, plugin_id: str) -> None:
+    for route in router.routes:
+        ep = getattr(route, "endpoint", None)
+        if callable(ep):
+            PLUGIN_BY_ENDPOINT[ep] = plugin_id
+
+
+def require_plugin(plugin_id: str):
+    """Router-level dep that 404s when the plugin is not in ENABLED_PLUGINS."""
+
+    async def _check(request: Request) -> None:
+        tenant = _get_tenant(request)
+        if not tenant.settings.plugin_enabled(plugin_id):
+            raise HTTPException(status_code=404, detail="Feature disabled")
+
+    return _check
+
+
+def register_plugin_router(app: FastAPI, router: APIRouter, plugin_id: str) -> None:
+    """Register a plugin router with tenant allowlist gating and OpenAPI tracking."""
+    _track_plugin_router(router, plugin_id)
+    app.include_router(router, dependencies=[Depends(require_plugin(plugin_id))])

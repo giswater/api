@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Single API-owned schema: basic-auth tables + audit log tables.
+# Single API-owned schema: basic-auth tables + audit log tables + jobs.
 GWAPI_SCHEMA = "gwapi"
 
 # DEPRECATED #28: pre-1.6.0 deployments kept audit logs in the `log` schema.
@@ -24,6 +24,9 @@ LEGACY_LOG_SCHEMA = "log"
 GWAPI_USERS_TABLE = "users"
 GWAPI_ROLES_TABLE = "roles"
 GWAPI_USER_ROLES_TABLE = "user_roles"
+
+# Background jobs table
+JOBS_TABLE = "jobs"
 
 # Audit log tables (current names in `gwapi`)
 HTTP_LOG_TABLE = "http_logs"

@@ -77,7 +77,7 @@ Curated Model Context Protocol server mounted at `${API_ROOT}/v1/mcp/` (Streamab
 
 ### Rate limiting
 
-Applied by dependencies on selected routes (see [`app/utils/utils.py`](../app/utils/utils.py) `create_rate_limiter`).
+Applied by dependencies on selected routes (see [`app/utils/rate_limit.py`](../app/utils/rate_limit.py) `create_rate_limiter`).
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
@@ -99,6 +99,24 @@ Applied by dependencies on selected routes (see [`app/utils/utils.py`](../app/ut
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `DEV_ALLOW_TENANT_HEADER` | `false` | When `true`, non-apex hosts may send `X-Tenant-ID` to pick a tenant without DNS-based host matching. **Local/dev only**: never enable in production — use `SINGLE_TENANT_ID` for IP-only single-tenant deployments or DNS routing for multi-tenant. Ignored when `SINGLE_TENANT_ID` is set. |
+
+### Jobs and Celery
+
+Background jobs are stored in `gwapi.jobs` (per tenant database). The API enqueues work via Celery; separate `celery-worker` and `celery-beat` services execute and reconcile jobs.
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Redis URL for the Celery broker (transport only; job state lives in Postgres). |
+| `JOBS_STALE_AFTER_SECONDS` | `7200` | Jobs stuck in `running` longer than this are failed by Celery Beat reconciliation. |
+
+Per-tenant worker service account (for job types with `requires_auth`):
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `WORKER_KEYCLOAK_CLIENT_ID` | _(empty)_ | Worker client id (`client_credentials`) for background jobs. |
+| `WORKER_KEYCLOAK_CLIENT_SECRET` | _(empty)_ | Worker client secret. |
+
+`GET /jobs/{job_id}` returns `poll_interval_ms` (and optional `Retry-After` header) so clients know how long to wait between status polls.
 
 ### Platform Keycloak (admin Bearer auth)
 
@@ -153,8 +171,9 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_ROUTING` | `false` | External routing (Valhalla) integration. |
 | `API_CRM` | `false` | CRM / hydrometer-style endpoints. |
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
-| `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, `/features/arcs`, …; list, GeoJSON, by-id fields/form/geojson). Needs Giswater DB ≥ 4.17.0. |
+| `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
 | `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
+| `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
 
 ### Database
 
@@ -201,6 +220,8 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 | `KEYCLOAK_ADMIN_CLIENT_ID` | _(required if enabled)_ | Admin client (service account / mgmt). |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | _(required if enabled)_ | Admin client secret. |
 | `KEYCLOAK_CALLBACK_URI` | _(required if enabled)_ | Callback URI registered in Keycloak for this client setup. |
+| `WORKER_KEYCLOAK_CLIENT_ID` | _(empty)_ | Worker service-account client id for background jobs (`client_credentials`). |
+| `WORKER_KEYCLOAK_CLIENT_SECRET` | _(empty)_ | Worker service-account client secret. |
 
 **Keycloak client checklist** (for the client named in `KEYCLOAK_CLIENT_ID`, required for Swagger OAuth and the token proxy):
 
