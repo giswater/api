@@ -1,4 +1,11 @@
-"""
+"""Service-account auth for background jobs.
+
+Jobs act as this API's Keycloak client (service account) instead of persisting
+the end user's bearer token. The grant is ``client_credentials`` against
+``KEYCLOAK_CLIENT_ID`` / ``KEYCLOAK_CLIENT_SECRET``. The issued token is
+multi-audience (Keycloak client scopes) and is reused for every downstream
+call. Tokens are cached in-process until shortly before expiry.
+
 Copyright © 2026 by BGEO. All rights reserved.
 The program is free software: you can redistribute it and/or modify it under the terms of the GNU
 General Public License as published by the Free Software Foundation, either version 3 of the License,
@@ -7,8 +14,8 @@ or (at your option) any later version.
 
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass
 
@@ -31,12 +38,13 @@ class _CachedToken:
 
 
 _cache: dict[str, _CachedToken] = {}
-_locks: dict[str, asyncio.Lock] = {}
+_cache_lock = threading.Lock()
 
 
 def worker_token_configured(tenant) -> bool:
+    """True when the tenant can request a service-account token for its own client."""
     s = tenant.settings
-    return bool(s.keycloak_url and s.keycloak_realm and s.worker_keycloak_client_id and s.worker_keycloak_client_secret)
+    return bool(s.keycloak_url and s.keycloak_realm and s.keycloak_client_id and s.keycloak_client_secret)
 
 
 def _token_endpoint(tenant) -> str:
@@ -47,42 +55,61 @@ def _token_endpoint(tenant) -> str:
 
 def _cache_key(tenant) -> str:
     s = tenant.settings
-    return f"{tenant.id}:{s.keycloak_realm}:{s.worker_keycloak_client_id}"
+    return f"{tenant.id}:{s.keycloak_realm}:{s.keycloak_client_id}"
 
 
 async def get_worker_token(tenant, *, force_refresh: bool = False) -> str:
+    """Cached ``client_credentials`` token for this API's ``KEYCLOAK_CLIENT_ID``."""
     if not worker_token_configured(tenant):
         raise WorkerAuthError(
-            f"Tenant '{tenant.id}' has no worker service account configured "
-            "(WORKER_KEYCLOAK_CLIENT_ID / WORKER_KEYCLOAK_CLIENT_SECRET)"
+            f"Tenant '{tenant.id}' has no Keycloak client configured (KEYCLOAK_CLIENT_ID / KEYCLOAK_CLIENT_SECRET)"
         )
 
     key = _cache_key(tenant)
-    now = time.monotonic()
     if not force_refresh:
+        cached = _read_cached(key)
+        if cached is not None:
+            return cached
+
+    token, expires_in = await _request_token(tenant)
+    _store(key, token, expires_in)
+    return token
+
+
+def service_account_token_source(tenant):
+    """Callable that returns a fresh service-account token for ``tenant``.
+
+    Downstream clients call this before every request. ``force_refresh=True``
+    skips the cache (used after a downstream 401).
+    """
+
+    async def token(*, force_refresh: bool = False) -> str:
+        return await get_worker_token(tenant, force_refresh=force_refresh)
+
+    return token
+
+
+def _read_cached(key: str) -> str | None:
+    now = time.monotonic()
+    with _cache_lock:
         cached = _cache.get(key)
         if cached is not None and cached.expires_at > now:
             return cached.access_token
+    return None
 
-    lock = _locks.setdefault(key, asyncio.Lock())
-    async with lock:
-        now = time.monotonic()
-        cached = _cache.get(key)
-        if not force_refresh and cached is not None and cached.expires_at > now:
-            return cached.access_token
 
-        token, expires_in = await _request_token(tenant)
-        expires_at = time.monotonic() + max(0.0, expires_in - _EXPIRY_SKEW_SECONDS)
+def _store(key: str, token: str, expires_in: float) -> None:
+    expires_at = time.monotonic() + max(0.0, expires_in - _EXPIRY_SKEW_SECONDS)
+    with _cache_lock:
         _cache[key] = _CachedToken(access_token=token, expires_at=expires_at)
-        return token
 
 
 async def _request_token(tenant) -> tuple[str, float]:
     s = tenant.settings
     data = {
         "grant_type": "client_credentials",
-        "client_id": s.worker_keycloak_client_id,
-        "client_secret": s.worker_keycloak_client_secret,
+        "client_id": s.keycloak_client_id,
+        "client_secret": s.keycloak_client_secret,
     }
     try:
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS) as client:
@@ -101,10 +128,7 @@ async def _request_token(tenant) -> tuple[str, float]:
     return token, expires_in
 
 
-async def ensure_worker_token_available(tenant) -> None:
-    await get_worker_token(tenant)
-
-
 def reset_cache() -> None:
-    _cache.clear()
-    _locks.clear()
+    """Clear cached tokens (used by tests and on tenant reload)."""
+    with _cache_lock:
+        _cache.clear()

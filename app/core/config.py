@@ -220,10 +220,6 @@ class TenantSettings:
     keycloak_admin_client_secret: str | None = None
     keycloak_callback_uri: str | None = None
 
-    # Worker service account (background jobs with requires_auth)
-    worker_keycloak_client_id: str | None = None
-    worker_keycloak_client_secret: str | None = None
-
     @property
     def keycloak_enabled(self) -> bool:
         return self.auth_mode == "keycloak"
@@ -351,8 +347,6 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         keycloak_admin_client_id=env.get("KEYCLOAK_ADMIN_CLIENT_ID") or None,
         keycloak_admin_client_secret=env.get("KEYCLOAK_ADMIN_CLIENT_SECRET") or None,
         keycloak_callback_uri=env.get("KEYCLOAK_CALLBACK_URI") or None,
-        worker_keycloak_client_id=env.get("WORKER_KEYCLOAK_CLIENT_ID") or None,
-        worker_keycloak_client_secret=env.get("WORKER_KEYCLOAK_CLIENT_SECRET") or None,
     )
 
 
