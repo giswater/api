@@ -107,3 +107,34 @@ def test_request_token_uses_client_credentials(monkeypatch):
         "client_id": "giswater-api",
         "client_secret": "secret",
     }
+
+
+def test_request_token_prefers_worker_client(monkeypatch):
+    captured: dict = {}
+
+    class _Response:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "tok-worker", "expires_in": 60}
+
+    class _Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, _url, data):
+            captured["data"] = data
+            return _Response()
+
+    monkeypatch.setattr(worker_auth.httpx, "AsyncClient", _Client)
+    tenant = _tenant(worker_keycloak_client_id="giswater-worker", worker_keycloak_client_secret="wsecret")
+    token = asyncio.run(worker_auth.get_worker_token(tenant))
+
+    assert token == "tok-worker"
+    assert captured["data"]["client_id"] == "giswater-worker"

@@ -1,10 +1,9 @@
 """Service-account auth for background jobs.
 
-Jobs act as this API's Keycloak client (service account) instead of persisting
-the end user's bearer token. The grant is ``client_credentials`` against
-``KEYCLOAK_CLIENT_ID`` / ``KEYCLOAK_CLIENT_SECRET``. The issued token is
-multi-audience (Keycloak client scopes) and is reused for every downstream
-call. Tokens are cached in-process until shortly before expiry.
+Jobs act as a Keycloak service account instead of persisting the end user's
+bearer token. ``client_credentials`` uses ``WORKER_KEYCLOAK_CLIENT_ID`` /
+``WORKER_KEYCLOAK_CLIENT_SECRET`` when set, otherwise the tenant API client.
+Storage, hengine, and artifact-api all keep that service-account token.
 
 Copyright © 2026 by BGEO. All rights reserved.
 The program is free software: you can redistribute it and/or modify it under the terms of the GNU
@@ -41,10 +40,20 @@ _cache: dict[str, _CachedToken] = {}
 _cache_lock = threading.Lock()
 
 
+def worker_client_credentials(settings) -> tuple[str | None, str | None]:
+    """Worker client id/secret, falling back to the tenant API client."""
+    worker_id = getattr(settings, "worker_keycloak_client_id", None)
+    worker_secret = getattr(settings, "worker_keycloak_client_secret", None)
+    if worker_id and worker_secret:
+        return worker_id, worker_secret
+    return settings.keycloak_client_id, settings.keycloak_client_secret
+
+
 def worker_token_configured(tenant) -> bool:
-    """True when the tenant can request a service-account token for its own client."""
+    """True when the tenant can request a service-account token."""
     s = tenant.settings
-    return bool(s.keycloak_url and s.keycloak_realm and s.keycloak_client_id and s.keycloak_client_secret)
+    client_id, client_secret = worker_client_credentials(s)
+    return bool(s.keycloak_url and s.keycloak_realm and client_id and client_secret)
 
 
 def _token_endpoint(tenant) -> str:
@@ -55,14 +64,16 @@ def _token_endpoint(tenant) -> str:
 
 def _cache_key(tenant) -> str:
     s = tenant.settings
-    return f"{tenant.id}:{s.keycloak_realm}:{s.keycloak_client_id}"
+    client_id, _secret = worker_client_credentials(s)
+    return f"{tenant.id}:{s.keycloak_realm}:{client_id}"
 
 
 async def get_worker_token(tenant, *, force_refresh: bool = False) -> str:
-    """Cached ``client_credentials`` token for this API's ``KEYCLOAK_CLIENT_ID``."""
+    """Cached ``client_credentials`` token for the worker client."""
     if not worker_token_configured(tenant):
         raise WorkerAuthError(
-            f"Tenant '{tenant.id}' has no Keycloak client configured (KEYCLOAK_CLIENT_ID / KEYCLOAK_CLIENT_SECRET)"
+            f"Tenant '{tenant.id}' has no Keycloak client configured "
+            "(WORKER_KEYCLOAK_CLIENT_ID / WORKER_KEYCLOAK_CLIENT_SECRET or KEYCLOAK_CLIENT_ID / KEYCLOAK_CLIENT_SECRET)"
         )
 
     key = _cache_key(tenant)
@@ -105,11 +116,11 @@ def _store(key: str, token: str, expires_in: float) -> None:
 
 
 async def _request_token(tenant) -> tuple[str, float]:
-    s = tenant.settings
+    client_id, client_secret = worker_client_credentials(tenant.settings)
     data = {
         "grant_type": "client_credentials",
-        "client_id": s.keycloak_client_id,
-        "client_secret": s.keycloak_client_secret,
+        "client_id": client_id,
+        "client_secret": client_secret,
     }
     try:
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS) as client:

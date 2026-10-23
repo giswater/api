@@ -43,6 +43,12 @@ Reload the tenant (restart the app, or `POST ${API_ROOT}/admin/tenants/<id>/relo
 
 Auth-code uses `http://<host>:8000/.../docs/oauth2-redirect`. Keycloak only treats a **trailing** `*` as a wildcard (prefix match); `http://*.bgeo360.localhost:...` is a literal and will not match `acme.bgeo360.localhost`. The imported client allows `http://*` for local multi-tenant hosts. In real IdPs, register the exact tenant URL(s).
 
+## Worker client (jobs)
+
+Imported client `giswater-worker` (`giswater-worker-secret`) is confidential and service-account only. Its service account has realm role `s3-write`, claim `tenant_id=dev`, and audiences `hengine-api`, `artifact-api` and `storage-s3`.
+
+Point the tenant at it with `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET`. Jobs call storage, hengine-api, and artifact-api with that service-account token. People log in through `qgis` or `giswater-api`. In production the worker, hengine-api, artifact-api and storage-s3 clients live in the **same** tenant realm so the worker token's `aud` and signature match what the downstream APIs validate.
+
 ## Reset realm
 
 `start-dev` uses an ephemeral store. Recreate the container to re-import:

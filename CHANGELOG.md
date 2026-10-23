@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Worker Keycloak client settings `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (fallback: `KEYCLOAK_CLIENT_*`). Jobs call storage, hengine, and artifact-api with that service-account token.
 - `role_connection` in `app/db/execution.py`: one `SET ROLE` for a multi-statement transaction. Callers commit on success; an exception rolls the transaction back, which clears both the role and the statements. `execute_sql*` signatures are unchanged.
 - **Celery + Redis** background job transport: `app/celery_app.py`, `app/tasks/` (`execute_job`, `reconcile_stale_jobs`, worker runtime). Postgres (`gwapi.jobs`) remains the source of truth; Redis is broker-only.
 - **Alembic revision `0002_gwapi_jobs`**: creates `gwapi.jobs` (progress column, indexes) as part of the API-owned schema.
-- Job progress reporting (`app/jobs/progress.py`) and background-job Keycloak auth (`app/jobs/worker_auth.py`). Jobs use the tenant `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` service account (`client_credentials`).
+- Job progress reporting (`app/jobs/progress.py`) and background-job Keycloak auth (`app/jobs/worker_auth.py`). Jobs use a service account (`client_credentials`), preferring `WORKER_KEYCLOAK_CLIENT_*` and falling back to `KEYCLOAK_CLIENT_*`.
 - Docker Compose services: `redis`, `celery-worker`, `celery-beat` (dev and production `deploy/docker-compose.yml`).
 - Tests: `test_jobs_execute_task`, `test_jobs_reconcile`, `test_jobs_registry`.
 

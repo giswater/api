@@ -62,6 +62,8 @@ class KeycloakSettingsIn(BaseModel):
     admin_client_id: Optional[str] = None
     admin_client_secret: Optional[str] = None
     callback_uri: Optional[str] = None
+    worker_client_id: Optional[str] = None
+    worker_client_secret: Optional[str] = None
 
 
 class KeycloakSettingsOut(BaseModel):
@@ -73,6 +75,8 @@ class KeycloakSettingsOut(BaseModel):
     admin_client_id: Optional[str] = None
     admin_client_secret: Optional[str] = None  # _REDACTED or null
     callback_uri: Optional[str] = None
+    worker_client_id: Optional[str] = None
+    worker_client_secret: Optional[str] = None  # _REDACTED or null
 
 
 class AuthSettingsIn(BaseModel):
@@ -159,6 +163,7 @@ class TenantOut(BaseModel):
                 s.keycloak_client_id,
                 s.keycloak_admin_client_id,
                 s.keycloak_callback_uri,
+                s.worker_keycloak_client_id,
             )
         ):
             keycloak_out = KeycloakSettingsOut(
@@ -170,6 +175,8 @@ class TenantOut(BaseModel):
                 admin_client_id=s.keycloak_admin_client_id,
                 admin_client_secret=_REDACTED if s.keycloak_admin_client_secret else None,
                 callback_uri=s.keycloak_callback_uri,
+                worker_client_id=s.worker_keycloak_client_id,
+                worker_client_secret=_REDACTED if s.worker_keycloak_client_secret else None,
             )
         auth = AuthSettingsOut(
             mode=s.auth_mode,
@@ -278,4 +285,14 @@ def build_tenant_settings_from_input(
             _kept(kc.admin_client_secret, existing.keycloak_admin_client_secret if existing else None) if kc else None
         ),
         keycloak_callback_uri=kc.callback_uri if kc else None,
+        worker_keycloak_client_id=(
+            _kept(kc.worker_client_id, existing.worker_keycloak_client_id if existing else None)
+            if kc
+            else (existing.worker_keycloak_client_id if existing else None)
+        ),
+        worker_keycloak_client_secret=(
+            _kept(kc.worker_client_secret, existing.worker_keycloak_client_secret if existing else None)
+            if kc
+            else (existing.worker_keycloak_client_secret if existing else None)
+        ),
     )
