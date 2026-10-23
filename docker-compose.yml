@@ -24,6 +24,7 @@ services:
     volumes:
       - ./config:/app/config:Z
       - giswater_api_logs:/app/logs
+      - giswater_api_cmms:/app/data/cmms
     extra_hosts:
       # Dev only: lets the container reach Postgres on the host.
       # Docker Desktop already supports host.docker.internal natively.
@@ -77,3 +78,4 @@ networks:
 
 volumes:
   giswater_api_logs:
+  giswater_api_cmms:
