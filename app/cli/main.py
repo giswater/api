@@ -86,7 +86,7 @@ def admin_users_list(ctx: click.Context, tenant: str) -> None:
 @click.option("--username", required=True)
 @click.option("--password", required=True)
 @click.option("--db-role", default=None)
-@click.option("--role", "roles", multiple=True, default=["role_basic"])
+@click.option("--role", "roles", multiple=True, default=["basic"])
 @click.option("--enabled/--disabled", default=True)
 @click.pass_context
 def admin_users_create(

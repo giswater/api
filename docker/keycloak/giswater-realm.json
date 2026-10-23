@@ -16,9 +16,7 @@
       { "name": "epa", "description": "EPA capability (dev)" },
       { "name": "plan", "description": "Plan capability (dev)" },
       { "name": "admin", "description": "Admin capability (dev)" },
-      { "name": "system", "description": "System capability (dev)" },
-      { "name": "role_om", "description": "Operations role (dev)" },
-      { "name": "role_master", "description": "Master role (dev)" }
+      { "name": "system", "description": "System capability (dev)" }
     ]
   },
   "clients": [
@@ -138,7 +136,7 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["role_om", "basic", "om", "edit", "epa", "plan", "admin", "system"]
+      "realmRoles": ["basic", "om", "edit", "epa", "plan", "admin", "system"]
     },
     {
       "username": "service-account-giswater-worker",
