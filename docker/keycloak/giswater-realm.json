@@ -12,8 +12,7 @@
     "realm": [
       { "name": "role_om", "description": "Operations role (dev)" },
       { "name": "role_master", "description": "Master role (dev)" },
-      { "name": "s3-read", "description": "SeaweedFS read (dev)" },
-      { "name": "s3-write", "description": "SeaweedFS write (dev)" }
+      { "name": "epa", "description": "EPA capability (dev)" }
     ]
   },
   "clients": [
@@ -57,42 +56,6 @@
       ]
     },
     {
-      "clientId": "hengine-api",
-      "name": "Hengine API audience",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "hengine-api-audience",
-      "standardFlowEnabled": false,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false
-    },
-    {
-      "clientId": "artifact-api",
-      "name": "Artifact API audience",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "artifact-api-audience",
-      "standardFlowEnabled": false,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false
-    },
-    {
-      "clientId": "storage-s3",
-      "name": "Storage OIDC audience",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "storage-s3-audience",
-      "standardFlowEnabled": false,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false
-    },
-    {
       "clientId": "giswater-worker",
       "name": "Giswater worker",
       "enabled": true,
@@ -108,39 +71,6 @@
       "redirectUris": [],
       "webOrigins": [],
       "protocolMappers": [
-        {
-          "name": "aud-hengine-api",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "hengine-api",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "aud-artifact-api",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "artifact-api",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "aud-storage-s3",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "storage-s3",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
         {
           "name": "realm-roles",
           "protocol": "openid-connect",
@@ -202,13 +132,12 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["role_om"]
+      "realmRoles": ["role_om", "epa"]
     },
     {
       "username": "service-account-giswater-worker",
       "enabled": true,
-      "serviceAccountClientId": "giswater-worker",
-      "realmRoles": ["s3-write"]
+      "serviceAccountClientId": "giswater-worker"
     },
     {
       "username": "service-account-giswater-api-admin",

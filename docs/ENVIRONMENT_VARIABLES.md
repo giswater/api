@@ -109,7 +109,7 @@ Background jobs are stored in `gwapi.jobs` (per tenant database). The API enqueu
 | `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Redis URL for the Celery broker (transport only; job state lives in Postgres). |
 | `JOBS_STALE_AFTER_SECONDS` | `7200` | Jobs stuck in `running` longer than this are failed by Celery Beat reconciliation. |
 
-Job types with `requires_auth` mint a `client_credentials` token from `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (falling back to `KEYCLOAK_CLIENT_*`). That client (`giswater-worker`) is service-account only, with audience mappers for hengine-api, artifact-api and the storage client, plus `s3-write` and `tenant_id`. Storage, hengine, and artifact calls use that service-account token. In-request calls forward the caller's Bearer (that token needs `s3-read` when it downloads from storage).
+Job types with `requires_auth` mint a `client_credentials` token from `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (falling back to `KEYCLOAK_CLIENT_*`). That client (`giswater-worker`) is service-account only. In-request calls keep the caller's Bearer.
 
 `GET /jobs/{job_id}` returns `poll_interval_ms` (and optional `Retry-After` header) so clients know how long to wait between status polls.
 
@@ -169,6 +169,7 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
 | `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
 | `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
+| `ROLE_EPA` | `epa` | Keycloak realm/client role, or `gwapi` basic-auth role, that satisfies capability `epa` when auth is not `none`. Comma-separated names are OR. Empty falls back to `epa`. Admin API: `roles.epa`. |
 
 ### Database
 
@@ -226,7 +227,7 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 4. An **Audience** protocol mapper with *Included Client Audience* = the same client (`KEYCLOAK_CLIENT_ID`) and *Add to access token* ON. Without it, `verify_token` rejects every token with `401 Invalid token` because Keycloak does not add the client to `aud` automatically.
 5. LDAP users authenticate through the realm's LDAP federation provider. The Direct Grant Flow must not force OTP, and the user must have no pending required actions (otherwise use the authorization-code flow).
 6. The API issues `SET ROLE <preferred_username>` on DB calls; each user needs a matching PostgreSQL role.
-7. *Service accounts* OFF on this client. Jobs use `WORKER_KEYCLOAK_CLIENT_ID` (`giswater-worker`), not this client. People who log in here do not get `s3-write`.
+7. *Service accounts* OFF on this client. Jobs use `WORKER_KEYCLOAK_CLIENT_ID` (`giswater-worker`), not this client.
 
 **Local IdP:** `docker compose --profile keycloak up -d keycloak` starts a preconfigured Keycloak on `http://auth.localhost:8080` (realm/client/user ready for Swagger). See [docker/keycloak/README.md](../docker/keycloak/README.md).
 

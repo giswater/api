@@ -3,7 +3,7 @@
 Jobs act as a Keycloak service account instead of persisting the end user's
 bearer token. ``client_credentials`` uses ``WORKER_KEYCLOAK_CLIENT_ID`` /
 ``WORKER_KEYCLOAK_CLIENT_SECRET`` when set, otherwise the tenant API client.
-Storage, hengine, and artifact-api all keep that service-account token.
+Outbound calls that require that token keep the service-account token.
 
 Copyright © 2026 by BGEO. All rights reserved.
 The program is free software: you can redistribute it and/or modify it under the terms of the GNU

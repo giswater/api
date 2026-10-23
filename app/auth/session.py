@@ -133,6 +133,32 @@ def require_role(*roles: str):
     return _check
 
 
+def require_capability(capability: str):
+    """403 when the user lacks the tenant's configured role for ``capability``.
+
+    Skipped for anonymous users (``AUTH_MODE=none``). Unknown capability ids fail closed.
+    """
+
+    async def _check(
+        request: Request,
+        user: Annotated[ApiUser, Depends(get_current_user)],
+    ) -> ApiUser:
+        if user.is_anonymous:
+            return user
+        tenant = getattr(request.state, "tenant", None)
+        if tenant is None:
+            raise HTTPException(status_code=404, detail="Tenant not specified")
+        try:
+            names = tenant.settings.role_names(capability)
+        except KeyError as exc:
+            raise HTTPException(status_code=500, detail="Unknown capability") from exc
+        if not user.has_any_role(names):
+            raise HTTPException(status_code=403, detail="Insufficient role")
+        return user
+
+    return _check
+
+
 async def _platform_jwks() -> dict:
     """Fetch + cache the platform Keycloak JWKS."""
     if not (global_settings.platform_keycloak_url and global_settings.platform_keycloak_realm):

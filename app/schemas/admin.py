@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ..core.config import TenantSettings
+from ..core.config import TenantSettings, normalize_role_names
 from ..tenancy.registry import Tenant
 
 AuthMode = Literal["none", "basic", "keycloak"]
@@ -100,6 +100,8 @@ class AuthSettingsOut(BaseModel):
 class TenantIn(BaseModel):
     api: dict[str, bool] = Field(default_factory=dict)
     plugins: Optional[list[str]] = None
+    # Capability id -> comma-separated role names. Omitted keys keep the current value.
+    roles: Optional[dict[str, str]] = None
     db: DbSettingsIn
     auth: Optional[AuthSettingsIn] = None
     keycloak: Optional[KeycloakSettingsIn] = None  # DEPRECATED #22: use auth.keycloak
@@ -119,6 +121,7 @@ class TenantOut(BaseModel):
     id: str
     api: dict[str, bool]
     plugins: list[str]
+    roles: dict[str, str]
     db: DbSettingsOut
     auth: AuthSettingsOut
     keycloak: Optional[KeycloakSettingsOut] = None  # DEPRECATED #22: use auth.keycloak
@@ -194,11 +197,27 @@ class TenantOut(BaseModel):
             id=tenant.id,
             api=api,
             plugins=sorted(s.enabled_plugins),
+            roles={"epa": s.role_epa},
             db=db,
             auth=auth,
             keycloak=keycloak_out,  # DEPRECATED #22: duplicate of auth.keycloak; remove in 2.0.0
             pool=pool_status,
         )
+
+
+def _role_value(
+    payload_roles: dict[str, str] | None,
+    capability: str,
+    *,
+    existing_value: str | None,
+    default: str,
+) -> str:
+    """Resolve one capability's role string. Omitted keys keep ``existing_value``."""
+    if payload_roles is not None and capability in payload_roles:
+        return normalize_role_names(payload_roles[capability], default=default)
+    if existing_value is not None:
+        return existing_value
+    return default
 
 
 def build_tenant_settings_from_input(
@@ -258,6 +277,12 @@ def build_tenant_settings_from_input(
         api_features=_api("features"),
         api_mcp=_api("mcp"),
         enabled_plugins=_plugins(),
+        role_epa=_role_value(
+            payload.roles,
+            "epa",
+            existing_value=existing.role_epa if existing else None,
+            default="epa",
+        ),
         db_host=db.host,
         db_port=db.port,
         db_name=db.name,

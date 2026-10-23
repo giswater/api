@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from app.jobs.models import JobRecord, JobStatus
 
-JOB_POLL_CONFIG: dict[str, dict[str, int]] = {"go2epa": {"created": 3000, "running": 2000}}
+JOB_POLL_CONFIG: dict[str, dict[str, int]] = {}
 
 DEFAULT_POLL_MS: dict[str, int] = {"created": 5000, "running": 3000}
 

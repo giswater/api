@@ -107,6 +107,7 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
             "ENABLED_PLUGINS",
             ",".join(sorted(settings.enabled_plugins)) if settings.enabled_plugins else None,
         ),
+        ("ROLE_EPA", settings.role_epa),
         ("DB_HOST", settings.db_host),
         ("DB_PORT", settings.db_port),
         ("DB_NAME", settings.db_name),

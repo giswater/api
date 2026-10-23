@@ -13,7 +13,7 @@ First pull is ~500MB; Keycloak needs ~30–60s after `start-dev` before it answe
 
 - Admin console: http://auth.localhost:8080/admin (`admin` / `admin`)
 - Realm: `giswater` (imported from `giswater-realm.json`)
-- Test user: `test` / `test`
+- Test user: `test` / `test` (realm roles `role_om` and `epa`)
 
 ## Point a tenant at it
 
@@ -45,9 +45,9 @@ Auth-code uses `http://<host>:8000/.../docs/oauth2-redirect`. Keycloak only trea
 
 ## Worker client (jobs)
 
-Imported client `giswater-worker` (`giswater-worker-secret`) is confidential and service-account only. Its service account has realm role `s3-write`, claim `tenant_id=dev`, and audiences `hengine-api`, `artifact-api` and `storage-s3`.
+Imported client `giswater-worker` (`giswater-worker-secret`) is confidential and service-account only. Its access token carries realm roles and a hardcoded `tenant_id=dev` claim (replace per tenant in real realms).
 
-Point the tenant at it with `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET`. Jobs call storage, hengine-api, and artifact-api with that service-account token. People log in through `qgis` or `giswater-api`. In production the worker, hengine-api, artifact-api and storage-s3 clients live in the **same** tenant realm so the worker token's `aud` and signature match what the downstream APIs validate.
+Point the tenant at it with `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET`. Background jobs that need a service account use that token. People log in through `giswater-api`, which has service accounts off.
 
 ## Reset realm
 

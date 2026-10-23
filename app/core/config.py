@@ -173,6 +173,25 @@ class GlobalSettings:
         return self.admin_password
 
 
+# Capability id -> TenantSettings field. Keycloak role names are not hardcoded on routes.
+_CAPABILITY_FIELDS = {
+    "epa": "role_epa",
+}
+_DEFAULT_ROLE_EPA = "epa"
+
+
+def normalize_role_names(value: str | None, *, default: str) -> str:
+    """Comma-separated role names. Empty or unset falls back to ``default``."""
+    parts = [part.strip() for part in (value or "").split(",") if part.strip()]
+    if not parts:
+        return default
+    return ",".join(parts)
+
+
+def role_name_set(value: str) -> frozenset[str]:
+    return frozenset(part.strip() for part in value.split(",") if part.strip())
+
+
 @dataclass(frozen=True)
 class TenantSettings:
     """Per-tenant configuration loaded from `config/tenants/<id>.env`."""
@@ -222,6 +241,8 @@ class TenantSettings:
     # Background jobs. Unset falls back to KEYCLOAK_CLIENT_*.
     worker_keycloak_client_id: str | None = None
     worker_keycloak_client_secret: str | None = None
+    # Capability ``epa``. Comma-separated names are OR. Empty falls back to the default.
+    role_epa: str = "epa"
 
     @property
     def keycloak_enabled(self) -> bool:
@@ -249,6 +270,13 @@ class TenantSettings:
 
     def plugin_enabled(self, plugin_id: str) -> bool:
         return plugin_id in self.enabled_plugins
+
+    def role_names(self, capability: str) -> frozenset[str]:
+        """Role names that satisfy ``capability``. Unknown ids raise KeyError."""
+        field = _CAPABILITY_FIELDS.get(capability)
+        if field is None:
+            raise KeyError(capability)
+        return role_name_set(getattr(self, field))
 
 
 def _resolve_auth_mode(env: Mapping[str, str | None]) -> AuthMode:
@@ -352,6 +380,7 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         keycloak_callback_uri=env.get("KEYCLOAK_CALLBACK_URI") or None,
         worker_keycloak_client_id=env.get("WORKER_KEYCLOAK_CLIENT_ID") or None,
         worker_keycloak_client_secret=env.get("WORKER_KEYCLOAK_CLIENT_SECRET") or None,
+        role_epa=normalize_role_names(env.get("ROLE_EPA"), default=_DEFAULT_ROLE_EPA),
     )
 
 

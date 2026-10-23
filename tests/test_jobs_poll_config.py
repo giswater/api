@@ -7,7 +7,7 @@ from app.jobs.models import JobRecord, JobStatus
 from app.jobs.poll_config import poll_interval_ms_for_job
 
 
-def _record(*, status: JobStatus, job_type: str = "go2epa") -> JobRecord:
+def _record(*, status: JobStatus, job_type: str = "example") -> JobRecord:
     now = datetime.now(timezone.utc)
     return JobRecord(
         id=uuid4(),
@@ -33,4 +33,4 @@ def test_poll_interval_none_when_cancelled():
 
 
 def test_poll_interval_for_cancelling_matches_running():
-    assert poll_interval_ms_for_job(_record(status=JobStatus.CANCELLING)) == 2000
+    assert poll_interval_ms_for_job(_record(status=JobStatus.CANCELLING)) == 3000
