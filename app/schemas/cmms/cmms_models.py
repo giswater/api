@@ -8,6 +8,7 @@ or (at your option) any later version.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from fastapi import UploadFile
 from pydantic import BaseModel, Field, model_validator
 
 from ..common import BaseAPIResponse, Body
@@ -51,16 +52,18 @@ class VisitUpdate(_Dated):
     sysCodes: Optional[List[str]] = Field(None, description="Replace feature links with these sys_code values")
 
 
-class AttachmentMeta(BaseModel):
-    """JSON `meta` form field sent with an attachment upload."""
+class AttachmentUpload(BaseModel):
+    """One file plus its metadata, sent as multipart/form-data."""
 
+    file: UploadFile = Field(..., description="File to upload")
+    name: Optional[str] = Field(None, description="Display name; defaults to the file name")
+    code: Optional[str] = Field(None, description="Code")
     description: Optional[str] = Field(None, description="Description")
     attachmentType: Optional[str] = Field(None, description="Attachment type")
-    properties: Dict[str, Any] = Field(default_factory=dict, description="Free-form properties")
-    coordinates: Optional[Dict[str, Any]] = Field(
-        None, description="Override EXIF GPS. Used as-is when sent; otherwise GPS is read from the image"
-    )
     sysCodes: List[str] = Field(default_factory=list, description="Feature sys_code values to link directly")
+    lat: Optional[float] = Field(None, description="Overrides EXIF GPS latitude")
+    lon: Optional[float] = Field(None, description="Overrides EXIF GPS longitude")
+    alt: Optional[float] = Field(None, description="Overrides EXIF GPS altitude")
 
 
 class AttachmentUpdate(BaseModel):

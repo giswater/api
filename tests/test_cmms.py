@@ -6,7 +6,6 @@ or (at your option) any later version.
 """
 
 import io
-import json
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -138,7 +137,7 @@ def test_create_visit_rejects_bad_dates(client, default_params):
         "startDate": "2024-06-02T00:00:00Z",
         "endDate": "2024-06-01T00:00:00Z",
     }
-    resp = client.post(api("/cmms/visits"), params=default_params, data={"visit": json.dumps(payload)})
+    resp = client.post(api("/cmms/visits"), params=default_params, json=payload)
     assert resp.status_code == 422, resp.text
 
 
@@ -150,7 +149,7 @@ def test_upload_over_limit_is_413(client, default_params):
     resp = client.post(
         api("/cmms/attachments"),
         params=default_params,
-        files=[("files", ("big.bin", blob, "application/octet-stream"))],
+        files={"file": ("big.bin", blob, "application/octet-stream")},
     )
     assert resp.status_code == 413, resp.text
     after = set(root.iterdir()) if root.exists() else set()
@@ -166,19 +165,22 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
         "properties": {"sample": "api"},
         "sysCodes": [code],
     }
-    created = _data(
-        client.post(
-            api("/cmms/visits"),
-            params=default_params,
-            data={"visit": json.dumps(visit_payload)},
-            files=[("files", ("photo.png", _png(), "image/png"))],
-        )
-    )
+    created = _data(client.post(api("/cmms/visits"), params=default_params, json=visit_payload))
     visit = created["visits"][0]
     visit_id = visit["id"]
     assert code in visit["sys_codes"]
-    attachment = visit["attachments"][0]
+    assert "attachments" not in visit
+
+    photo = _data(
+        client.post(
+            api(f"/cmms/visits/{visit_id}/attachments"),
+            params=default_params,
+            files={"file": ("photo.png", _png(), "image/png")},
+        )
+    )
+    attachment = photo["attachments"][0]
     attachment_id = attachment["id"]
+    assert attachment["visit_ids"] == [visit_id]
     assert attachment["thumbnail_path"]
 
     listed = _data(client.get(api("/cmms/visits"), params={**default_params, "sysCode": code}))
@@ -198,11 +200,13 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
         client.post(
             api(f"/cmms/visits/{visit_id}/attachments"),
             params=default_params,
-            files=[("files", ("extra.txt", b"x", "text/plain"))],
+            files={"file": ("extra.txt", b"x", "text/plain")},
         )
     )
     assert extra["attachments"][0]["visit_ids"] == [visit_id]
     assert not extra["attachments"][0].get("thumbnail_path")
+    listed_files = _data(client.get(api(f"/cmms/visits/{visit_id}/attachments"), params=default_params))
+    assert {row["id"] for row in listed_files["attachments"]} == {attachment_id, extra["attachments"][0]["id"]}
 
     other = f"cmms-{uuid4().hex[:8]}"
     patched = _data(
@@ -217,22 +221,27 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
 
     deleted = _data(client.delete(api(f"/cmms/visits/{visit_id}"), params=default_params))
     assert deleted["visits"][0]["id"] == visit_id
+    assert deleted["visits"][0]["sys_codes"] == [other]
     still = client.get(api(f"/cmms/attachments/{attachment_id}"), params=default_params)
     assert still.status_code == 200, still.text
 
     direct_code = f"cmms-{uuid4().hex[:8]}"
-    uploaded = _data(
+    pdf = _data(
         client.post(
             api("/cmms/attachments"),
             params=default_params,
-            data={"meta": json.dumps({"sysCodes": [direct_code], "description": "direct"})},
-            files=[
-                ("files", ("note.pdf", _pdf(), "application/pdf")),
-                ("files", ("note.txt", b"hello", "text/plain")),
-            ],
+            data={"description": "direct", "sysCodes": [direct_code]},
+            files={"file": ("note.pdf", _pdf(), "application/pdf")},
         )
     )
-    by_name = {item["name"]: item for item in uploaded["attachments"]}
+    text = _data(
+        client.post(
+            api("/cmms/attachments"),
+            params=default_params,
+            files={"file": ("note.txt", b"hello", "text/plain")},
+        )
+    )
+    by_name = {item["name"]: item for item in [pdf["attachments"][0], text["attachments"][0]]}
     assert by_name["note.pdf"]["thumbnail_path"]
     assert not by_name["note.txt"].get("thumbnail_path")
     assert direct_code in by_name["note.pdf"]["sys_codes"]
@@ -244,7 +253,7 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
     storage = Path(os.environ["CMMS_STORAGE_DIR"]) / "test" / attachment_id
     assert not storage.exists()
 
-    for item in [*uploaded["attachments"], *extra["attachments"]]:
+    for item in [pdf["attachments"][0], text["attachments"][0], extra["attachments"][0]]:
         client.delete(api(f"/cmms/attachments/{item['id']}"), params=default_params)
 
 
@@ -254,7 +263,7 @@ def test_large_jpeg_keeps_exif_coordinates(client, default_params, cmms_ready):
         client.post(
             api("/cmms/attachments"),
             params=default_params,
-            files=[("files", ("shot.jpg", blob, "image/jpeg"))],
+            files={"file": ("shot.jpg", blob, "image/jpeg")},
         )
     )
     item = uploaded["attachments"][0]
@@ -262,4 +271,17 @@ def test_large_jpeg_keeps_exif_coordinates(client, default_params, cmms_ready):
     assert item["metadata"]["originalSize"] == len(blob)
     assert item["coordinates"]["lat"] == pytest.approx(41.3874, abs=0.01)
     assert item["thumbnail_path"]
+    overridden = _data(
+        client.post(
+            api("/cmms/attachments"),
+            params=default_params,
+            data={"lat": "10.5", "lon": "20.25", "alt": "3"},
+            files={"file": ("shot.jpg", blob, "image/jpeg")},
+        )
+    )
+    moved = overridden["attachments"][0]
+    assert moved["coordinates"]["lat"] == pytest.approx(10.5)
+    assert moved["coordinates"]["lon"] == pytest.approx(20.25)
+    assert moved["coordinates"]["alt"] == pytest.approx(3)
     client.delete(api(f"/cmms/attachments/{item['id']}"), params=default_params)
+    client.delete(api(f"/cmms/attachments/{moved['id']}"), params=default_params)

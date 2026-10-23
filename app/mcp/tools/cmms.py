@@ -5,7 +5,6 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-import json
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -48,7 +47,7 @@ async def get_visit(
     schema: SchemaName,
     visit_id: Annotated[str, Field(description="Visit UUID")],
 ) -> dict:
-    """Get one CMMS visit, including its sys_codes and attachments (metadata only, no file bytes)."""
+    """Get one CMMS visit and its sys_codes. List its files with list_attachments(visit_id=...)."""
     data = unwrap(await api.get(f"/cmms/visits/{visit_id}", schema=schema))
     return _first(data, "visits")
 
@@ -112,7 +111,7 @@ async def create_visit(
             "properties": properties,
         }
     )
-    data = unwrap(await api.post("/cmms/visits", schema=schema, data={"visit": json.dumps(payload)}))
+    data = unwrap(await api.post("/cmms/visits", schema=schema, json=payload))
     return _first(data, "visits")
 
 

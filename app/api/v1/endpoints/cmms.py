@@ -5,18 +5,16 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-import json
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Query
 from fastapi.responses import FileResponse
-from pydantic import ValidationError
 
 from app.api.deps import CommonsDep, get_service_context
 from app.core.config import global_settings
-from app.schemas.cmms.cmms_models import AttachmentMeta, AttachmentUpdate, CmmsResponse, VisitCreate, VisitUpdate
+from app.schemas.cmms.cmms_models import AttachmentUpdate, AttachmentUpload, CmmsResponse, VisitCreate, VisitUpdate
 from app.services.cmms_service import CmmsService
 
 router = APIRouter(prefix="/cmms", tags=["CMMS"])
@@ -28,17 +26,6 @@ def _service(commons: dict) -> CmmsService:
         storage_dir=Path(global_settings.cmms_storage_dir),
         max_upload_bytes=commons["tenant"].settings.cmms_max_upload_mb * 1024 * 1024,
     )
-
-
-def _parse(model, raw: str | None, *, required: bool = False):
-    if not raw:
-        if required:
-            raise HTTPException(status_code=422, detail=f"{model.__name__} is required")
-        return None
-    try:
-        return model.model_validate_json(raw)
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=json.loads(exc.json())) from exc
 
 
 def _file(stored) -> FileResponse:
@@ -63,13 +50,8 @@ async def get_visit(commons: CommonsDep, visit_id: UUID):
 
 
 @router.post("/visits", response_model=CmmsResponse, response_model_exclude_unset=True)
-async def create_visit(
-    commons: CommonsDep,
-    visit: str = Form(..., description="VisitCreate JSON"),
-    files: list[UploadFile] | None = File(None, description="Files to attach to the visit"),
-):
-    payload = _parse(VisitCreate, visit, required=True)
-    return await _service(commons).create_visit(payload, files)
+async def create_visit(commons: CommonsDep, visit: VisitCreate):
+    return await _service(commons).create_visit(visit)
 
 
 @router.patch("/visits/{visit_id}", response_model=CmmsResponse, response_model_exclude_unset=True)
@@ -83,8 +65,12 @@ async def delete_visit(commons: CommonsDep, visit_id: UUID):
 
 
 @router.get("/visits/{visit_id}/attachments", response_model=CmmsResponse, response_model_exclude_unset=True)
-async def list_visit_attachments(commons: CommonsDep, visit_id: UUID):
-    return await _service(commons).list_attachments(visit_id=visit_id, limit=1000)
+async def list_visit_attachments(
+    commons: CommonsDep,
+    visit_id: UUID,
+    limit: int = Query(100, ge=1, le=1000),
+):
+    return await _service(commons).list_attachments(visit_id=visit_id, limit=limit)
 
 
 @router.post(
@@ -92,13 +78,12 @@ async def list_visit_attachments(commons: CommonsDep, visit_id: UUID):
     response_model=CmmsResponse,
     response_model_exclude_unset=True,
 )
-async def add_visit_attachments(
+async def add_visit_attachment(
     commons: CommonsDep,
     visit_id: UUID,
-    files: list[UploadFile] | None = File(None),
-    meta: str | None = Form(None, description="AttachmentMeta JSON"),
+    upload: Annotated[AttachmentUpload, File()],
 ):
-    return await _service(commons).add_attachments(files, visit_id=visit_id, meta=_parse(AttachmentMeta, meta))
+    return await _service(commons).add_attachment(upload, visit_id=visit_id)
 
 
 @router.get("/visits/{visit_id}/attachments/{attachment_id}/file")
@@ -123,12 +108,8 @@ async def list_attachments(
 
 
 @router.post("/attachments", response_model=CmmsResponse, response_model_exclude_unset=True)
-async def upload_attachments(
-    commons: CommonsDep,
-    files: list[UploadFile] | None = File(None),
-    meta: str | None = Form(None, description="AttachmentMeta JSON"),
-):
-    return await _service(commons).add_attachments(files, meta=_parse(AttachmentMeta, meta))
+async def upload_attachment(commons: CommonsDep, upload: Annotated[AttachmentUpload, File()]):
+    return await _service(commons).add_attachment(upload)
 
 
 @router.get("/attachments/{attachment_id}", response_model=CmmsResponse, response_model_exclude_unset=True)

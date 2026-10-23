@@ -16,7 +16,7 @@ from fastapi import HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.db.execution import execute_sql
-from app.schemas.cmms.cmms_models import AttachmentMeta, AttachmentUpdate, VisitCreate, VisitUpdate
+from app.schemas.cmms.cmms_models import AttachmentUpdate, AttachmentUpload, VisitCreate, VisitUpdate
 from app.services import cmms_media
 from app.services.context import ServiceContext
 from app.services.helpers import accepted_data_response
@@ -42,22 +42,6 @@ _ATTACHMENT_COLUMNS = {
     "properties": ("properties", "::jsonb"),
     "coordinates": ("coordinates", "::jsonb"),
 }
-_RECORD_KEYS = (
-    "id",
-    "name",
-    "code",
-    "description",
-    "content_type",
-    "path",
-    "thumbnail_path",
-    "size",
-    "attachment_type",
-    "properties",
-    "coordinates",
-    "uploaded_by",
-    "metadata",
-)
-
 # No braces: execute_sql runs the query through sql.SQL.format.
 _ATTACHMENT_JSON = """jsonb_build_object(
     'id', a.id, 'name', a.name, 'code', a.code, 'description', a.description,
@@ -86,21 +70,33 @@ _VISIT_JSON = """jsonb_build_object(
     ), jsonb_build_array())
 )"""
 
-_ATTACH_CTES = """
-a AS (
+_INSERT_VISIT = """
+WITH v AS (
+    INSERT INTO cmms.visit (
+        id, ext_visit_id, type, status, title, description,
+        start_date, end_date, properties, created_by, updated_by
+    ) VALUES (
+        %s::uuid, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, %s::jsonb, %s, %s
+    )
+    RETURNING id
+),
+vf AS (
+    INSERT INTO cmms.visit_x_feature (visit_id, sys_code)
+    SELECT v.id, s.sys_code FROM v CROSS JOIN unnest(%s::text[]) AS s(sys_code)
+    RETURNING sys_code
+)
+SELECT id FROM v
+"""
+
+_INSERT_ATTACHMENT = """
+WITH a AS (
     INSERT INTO cmms.attachment (
         id, name, code, description, content_type, path, thumbnail_path, size,
         attachment_type, properties, coordinates, uploaded_by, metadata
+    ) VALUES (
+        %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb
     )
-    SELECT id, name, code, description, content_type, path, thumbnail_path, size,
-        attachment_type, properties, coordinates, uploaded_by, metadata
-    FROM jsonb_to_recordset(%s::jsonb) AS x(
-        id uuid, name text, code text, description text, content_type text, path text,
-        thumbnail_path text, size bigint, attachment_type text, properties jsonb,
-        coordinates jsonb, uploaded_by text, metadata jsonb
-    )
-    RETURNING id, name, code, description, content_type, path, thumbnail_path, size,
-        attachment_type, properties, coordinates, uploaded_by, uploaded_at, metadata
+    RETURNING id
 ),
 ax AS (
     INSERT INTO cmms.attachment_x_visit (visit_id, attachment_id)
@@ -110,35 +106,12 @@ af AS (
     INSERT INTO cmms.attachment_x_feature (sys_code, attachment_id)
     SELECT s.sys_code, a.id FROM a CROSS JOIN unnest(%s::text[]) AS s(sys_code)
 )
+SELECT id FROM a
 """
 
-_INSERT_VISIT = f"""
-WITH v AS (
-    INSERT INTO cmms.visit (
-        id, ext_visit_id, type, status, title, description,
-        start_date, end_date, properties, created_by, updated_by
-    ) VALUES (
-        %s::uuid, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, %s::jsonb, %s, %s
-    )
-    RETURNING id, ext_visit_id, type, status, title, description, start_date, end_date,
-        properties, created_at, created_by, updated_at, updated_by
-),
-vf AS (
-    INSERT INTO cmms.visit_x_feature (visit_id, sys_code)
-    SELECT %s::uuid, s.sys_code FROM unnest(%s::text[]) AS s(sys_code)
-    RETURNING sys_code
-),
-{_ATTACH_CTES}
-SELECT to_jsonb(v) AS visit,
-    COALESCE((SELECT jsonb_agg(vf.sys_code ORDER BY vf.sys_code) FROM vf), jsonb_build_array()) AS sys_codes,
-    COALESCE((SELECT jsonb_agg(to_jsonb(a)) FROM a), jsonb_build_array()) AS attachments
-FROM v
-"""
 
-_INSERT_ATTACHMENTS = f"""
-WITH {_ATTACH_CTES}
-SELECT COALESCE((SELECT jsonb_agg(to_jsonb(a)) FROM a), jsonb_build_array()) AS attachments
-"""
+def _json(value) -> str | None:
+    return None if value is None else json.dumps(value)
 
 
 def _clean_codes(codes: list[str] | None) -> list[str]:
@@ -209,80 +182,59 @@ class CmmsService:
             raise HTTPException(status_code=404, detail="File not found")
         return full
 
-    async def _store_files(self, files: list[UploadFile] | None, meta: AttachmentMeta | None) -> list[dict]:
-        created: list[str] = []
-        try:
-            return [await self._store_one(upload, meta, created) for upload in (files or [])]
-        except Exception:
-            for attachment_id in created:
-                self._remove_dir(attachment_id)
-            raise
-
-    async def _store_one(self, upload: UploadFile, meta: AttachmentMeta | None, created: list[str]) -> dict:
+    async def _store_one(self, upload: AttachmentUpload) -> dict:
         attachment_id = str(uuid4())
-        filename = _safe_name(upload.filename)
+        filename = _safe_name(upload.file.filename)
         directory = self.storage_dir / self.ctx.tenant_id / attachment_id
         directory.mkdir(parents=True, exist_ok=True)
-        created.append(attachment_id)
-        dest = directory / filename
-        size = await _write_upload(upload, dest, self.max_upload_bytes)
-        content_type = cmms_media.resolve_content_type(filename, upload.content_type)
-        processed = await run_in_threadpool(cmms_media.process_upload, dest, content_type)
+        try:
+            dest = directory / filename
+            size = await _write_upload(upload.file, dest, self.max_upload_bytes)
+            content_type = cmms_media.resolve_content_type(filename, upload.file.content_type)
+            processed = await run_in_threadpool(cmms_media.process_upload, dest, content_type)
+        except Exception:
+            self._remove_dir(attachment_id)
+            raise
         coordinates = processed["coordinates"]
-        if meta is not None and meta.coordinates is not None:
-            coordinates = meta.coordinates
+        if upload.lat is not None and upload.lon is not None:
+            coordinates = {"lat": upload.lat, "lon": upload.lon, "alt": upload.alt}
         return {
             "id": attachment_id,
-            "name": processed["path"].name,
-            "code": None,
-            "description": meta.description if meta else None,
+            "name": upload.name or processed["path"].name,
+            "code": upload.code,
+            "description": upload.description,
             "content_type": processed["content_type"],
             "path": self._relative(processed["path"]),
             "thumbnail_path": self._relative(processed["thumbnail_path"]) if processed["thumbnail_path"] else None,
             "size": processed["size"] or size,
-            "attachment_type": meta.attachmentType if meta else None,
-            "properties": meta.properties if meta else {},
+            "attachment_type": upload.attachmentType,
+            "properties": {},
             "coordinates": coordinates,
             "uploaded_by": self.ctx.user_id,
             "metadata": processed["metadata"] or {},
         }
 
-    def _attach_params(self, records: list[dict], visit_id: str | None, sys_codes: list[str]) -> tuple:
-        payload = [{key: row[key] for key in _RECORD_KEYS} for row in records]
-        return (json.dumps(payload), visit_id, visit_id, sys_codes)
-
-    async def create_visit(self, visit: VisitCreate, files: list[UploadFile] | None = None) -> dict:
+    async def create_visit(self, visit: VisitCreate) -> dict:
         data = visit.model_dump(mode="json")
         visit_id = str(uuid4())
-        codes = _clean_codes(data["sysCodes"])
-        stored = await self._store_files(files, None)
-        params = (
-            visit_id,
-            data.get("extVisitId"),
-            data["type"],
-            data["status"],
-            data.get("title"),
-            data.get("description"),
-            data.get("startDate"),
-            data.get("endDate"),
-            json.dumps(data.get("properties") or {}),
-            self.ctx.user_id,
-            self.ctx.user_id,
-            visit_id,
-            codes,
-            *self._attach_params(stored, visit_id, []),
+        await self._sql(
+            _INSERT_VISIT,
+            (
+                visit_id,
+                data.get("extVisitId"),
+                data["type"],
+                data["status"],
+                data.get("title"),
+                data.get("description"),
+                data.get("startDate"),
+                data.get("endDate"),
+                json.dumps(data.get("properties") or {}),
+                self.ctx.user_id,
+                self.ctx.user_id,
+                _clean_codes(data["sysCodes"]),
+            ),
         )
-        try:
-            rows = await self._sql(_INSERT_VISIT, params)
-        except Exception:
-            for item in stored:
-                self._remove_dir(item["id"])
-            raise
-        body = rows[0]
-        created = body["visit"]
-        created["sys_codes"] = body["sys_codes"]
-        created["attachments"] = _stamp(body["attachments"], visit_id=created["id"], sys_codes=[])
-        return await accepted_data_response(self.ctx, "Created visit successfully", {"visits": [created]})
+        return await self.get_visit(UUID(visit_id))
 
     async def list_visits(
         self,
@@ -316,7 +268,6 @@ class CmmsService:
 
     async def get_visit(self, visit_id: UUID) -> dict:
         visit = await self._require_visit(visit_id)
-        visit["attachments"] = await self._attachments_for_visit(visit_id)
         return await accepted_data_response(self.ctx, "Fetched visit successfully", {"visits": [visit]})
 
     async def update_visit(self, visit_id: UUID, visit: VisitUpdate) -> dict:
@@ -354,10 +305,8 @@ class CmmsService:
             raise HTTPException(status_code=404, detail=f"Visit '{visit_id}' not found")
 
     async def delete_visit(self, visit_id: UUID) -> dict:
-        rows = await self._sql("DELETE FROM cmms.visit WHERE id = %s::uuid RETURNING id", (str(visit_id),))
-        if not rows:
-            raise HTTPException(status_code=404, detail=f"Visit '{visit_id}' not found")
-        return await accepted_data_response(self.ctx, "Deleted visit successfully", {"visits": [{"id": str(visit_id)}]})
+        visit = await self._delete_row("visit", _VISIT_JSON, "v", visit_id, "Visit")
+        return await accepted_data_response(self.ctx, "Deleted visit successfully", {"visits": [visit]})
 
     async def list_attachments(
         self,
@@ -399,28 +348,37 @@ class CmmsService:
         attachment = await self._require_attachment(attachment_id)
         return await accepted_data_response(self.ctx, "Fetched attachment successfully", {"attachments": [attachment]})
 
-    async def add_attachments(
-        self,
-        files: list[UploadFile] | None,
-        *,
-        visit_id: UUID | None = None,
-        meta: AttachmentMeta | None = None,
-    ) -> dict:
+    async def add_attachment(self, upload: AttachmentUpload, *, visit_id: UUID | None = None) -> dict:
         if visit_id is not None:
             await self._require_visit(visit_id)
-        stored = await self._store_files(files, meta)
-        if not stored:
-            raise HTTPException(status_code=400, detail="No files uploaded")
-        codes = _clean_codes(meta.sysCodes) if meta else []
+        stored = await self._store_one(upload)
         visit = str(visit_id) if visit_id else None
         try:
-            rows = await self._sql(_INSERT_ATTACHMENTS, self._attach_params(stored, visit, codes))
+            await self._sql(
+                _INSERT_ATTACHMENT,
+                (
+                    stored["id"],
+                    stored["name"],
+                    stored["code"],
+                    stored["description"],
+                    stored["content_type"],
+                    stored["path"],
+                    stored["thumbnail_path"],
+                    stored["size"],
+                    stored["attachment_type"],
+                    _json(stored["properties"]),
+                    _json(stored["coordinates"]),
+                    stored["uploaded_by"],
+                    _json(stored["metadata"]),
+                    visit,
+                    visit,
+                    _clean_codes(upload.sysCodes),
+                ),
+            )
         except Exception:
-            for item in stored:
-                self._remove_dir(item["id"])
+            self._remove_dir(stored["id"])
             raise
-        attachments = _stamp(rows[0]["attachments"], visit_id=visit, sys_codes=codes)
-        return await accepted_data_response(self.ctx, "Uploaded attachments successfully", {"attachments": attachments})
+        return await self.get_attachment(UUID(stored["id"]))
 
     async def update_attachment(self, attachment_id: UUID, attachment: AttachmentUpdate) -> dict:
         data = attachment.model_dump(mode="json", exclude_unset=True)
@@ -434,16 +392,9 @@ class CmmsService:
         return await self.get_attachment(attachment_id)
 
     async def delete_attachment(self, attachment_id: UUID) -> dict:
-        rows = await self._sql(
-            "DELETE FROM cmms.attachment WHERE id = %s::uuid RETURNING id",
-            (str(attachment_id),),
-        )
-        if not rows:
-            raise HTTPException(status_code=404, detail=f"Attachment '{attachment_id}' not found")
+        attachment = await self._delete_row("attachment", _ATTACHMENT_JSON, "a", attachment_id, "Attachment")
         self._remove_dir(str(attachment_id))
-        return await accepted_data_response(
-            self.ctx, "Deleted attachment successfully", {"attachments": [{"id": str(attachment_id)}]}
-        )
+        return await accepted_data_response(self.ctx, "Deleted attachment successfully", {"attachments": [attachment]})
 
     async def get_file(self, attachment_id: UUID, *, visit_id: UUID | None = None, thumbnail: bool = False):
         rows = await self._sql(
@@ -470,6 +421,26 @@ class CmmsService:
             return self._resolve_stored(row["thumbnail_path"]), "image/jpeg", "thumb.jpg"
         return self._resolve_stored(row["path"]), row.get("content_type"), row.get("name")
 
+    async def _delete_row(self, table: str, row_json: str, alias: str, row_id: UUID, label: str) -> dict:
+        # Snapshot first: a RETURNING subquery would miss links removed by ON DELETE CASCADE.
+        rows = await self._sql(
+            f"""
+            WITH src AS (
+                SELECT {row_json} AS item
+                FROM cmms.{table} {alias}
+                WHERE {alias}.id = %s::uuid
+            ),
+            gone AS (
+                DELETE FROM cmms.{table} WHERE id = %s::uuid RETURNING id
+            )
+            SELECT src.item AS item FROM src WHERE EXISTS (SELECT 1 FROM gone)
+            """,
+            (str(row_id), str(row_id)),
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"{label} '{row_id}' not found")
+        return rows[0]["item"]
+
     async def _require_visit(self, visit_id: UUID) -> dict:
         rows = await self._sql(
             f"SELECT {_VISIT_JSON} AS visit FROM cmms.visit v WHERE v.id = %s::uuid", (str(visit_id),)
@@ -486,18 +457,6 @@ class CmmsService:
         if not rows:
             raise HTTPException(status_code=404, detail=f"Attachment '{attachment_id}' not found")
         return rows[0]["attachment"]
-
-    async def _attachments_for_visit(self, visit_id: UUID) -> list:
-        rows = await self._sql(
-            f"""
-            SELECT COALESCE(jsonb_agg({_ATTACHMENT_JSON} ORDER BY a.uploaded_at), jsonb_build_array()) AS attachments
-            FROM cmms.attachment a
-            JOIN cmms.attachment_x_visit x ON x.attachment_id = a.id
-            WHERE x.visit_id = %s::uuid
-            """,
-            (str(visit_id),),
-        )
-        return rows[0]["attachments"] if rows else []
 
     async def _update_attachment_row(self, attachment_id: UUID, data: dict) -> None:
         sets, params = _assignments(data, _ATTACHMENT_COLUMNS)
@@ -553,13 +512,3 @@ async def _write_upload(upload: UploadFile, dest: Path, limit: int) -> int:
     finally:
         await upload.close()
     return size
-
-
-def _stamp(attachments, *, visit_id: str | None, sys_codes: list[str]) -> list:
-    stamped = []
-    for item in attachments or []:
-        row = dict(item)
-        row["sys_codes"] = list(sys_codes)
-        row["visit_ids"] = [visit_id] if visit_id else []
-        stamped.append(row)
-    return stamped
