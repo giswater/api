@@ -248,7 +248,7 @@ Tenant API auth is controlled per tenant by **`AUTH_MODE`**:
 
 Optional bootstrap: `AUTH_BASIC_BOOTSTRAP_USER` / `AUTH_BASIC_BOOTSTRAP_PASSWORD` create the first user when the table is empty.
 
-**Role checks:** inject `Depends(require_role("role_om", "role_master"))` on routes; roles come from Keycloak JWT claims or `gwapi.user_roles` in basic mode.
+**Role checks:** inject `Depends(require_role("om", "system"))` on routes; roles come from Keycloak JWT claims or `gwapi.user_roles` in basic mode.
 
 Keycloak integration details (unchanged for `AUTH_MODE=keycloak`):
 - Endpoints require a valid `Authorization: Bearer <token>` issued by the tenant's realm.

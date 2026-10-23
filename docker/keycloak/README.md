@@ -13,7 +13,7 @@ First pull is ~500MB; Keycloak needs ~30–60s after `start-dev` before it answe
 
 - Admin console: http://auth.localhost:8080/admin (`admin` / `admin`)
 - Realm: `giswater` (imported from `giswater-realm.json`)
-- Test user: `test` / `test`
+- Test user: `test` / `test` (realm roles `basic`, `om`, `edit`, `epa`, `plan`, `admin`, `system`)
 
 ## Point a tenant at it
 
@@ -42,6 +42,12 @@ Reload the tenant (restart the app, or `POST ${API_ROOT}/admin/tenants/<id>/relo
    - **keycloakAuthCode**: redirects to Keycloak login (`test` / `test`).
 
 Auth-code uses `http://<host>:8000/.../docs/oauth2-redirect`. Keycloak only treats a **trailing** `*` as a wildcard (prefix match); `http://*.bgeo360.localhost:...` is a literal and will not match `acme.bgeo360.localhost`. The imported client allows `http://*` for local multi-tenant hosts. In real IdPs, register the exact tenant URL(s).
+
+## Worker client (jobs)
+
+Imported client `giswater-worker` (`giswater-worker-secret`) is confidential and service-account only. Its access token carries realm roles and a hardcoded `tenant_id=dev` claim (replace per tenant in real realms).
+
+Point the tenant at it with `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET`. Background jobs that need a service account use that token. People log in through `giswater-api`, which has service accounts off.
 
 ## Reset realm
 

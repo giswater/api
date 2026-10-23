@@ -33,7 +33,7 @@ def test_cli_db_history():
 
     assert result.exit_code == 0, result.output
     revisions = {r["revision"] for r in json.loads(result.output)}
-    assert revisions == {"0001_gwapi_initial"}
+    assert revisions == {"0001_gwapi_initial", "0002_gwapi_jobs", "0003_gwapi_capability_roles"}
 
 
 def test_cli_db_current():
