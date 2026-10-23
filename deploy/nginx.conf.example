@@ -7,11 +7,14 @@
 #   - DNS multi-tenant mode: proxy_set_header Host $host; (app resolves tenant from Host).
 #   - Single-tenant mode (SINGLE_TENANT_ID=<id>): Host is ignored by the app;
 #     see the IP-only block at the bottom of this file.
+#   - CMMS uploads: client_max_body_size must be >= the tenant CMMS_MAX_UPLOAD_MB
+#     (default 100). Otherwise nginx rejects the body before the API sees it.
 
 # Apex domain: Giswater platform surface under /giswater (admin, probes, static).
 server {
     listen 443 ssl;
     server_name bgeo360.com;
+    client_max_body_size 100m;
 
     location /giswater/ {
         proxy_pass http://127.0.0.1:8000;
@@ -29,6 +32,7 @@ server {
 server {
     listen 443 ssl;
     server_name ~^(?<tid>[a-z0-9-]+)\.bgeo360\.com$;
+    client_max_body_size 100m;
 
     location /giswater/v1/ {
         proxy_pass http://127.0.0.1:8000;
@@ -50,6 +54,7 @@ server {
 server {
     listen 80 default_server;
     server_name _;
+    client_max_body_size 100m;
 
     location /giswater/ {
         proxy_pass http://127.0.0.1:8000;

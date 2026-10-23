@@ -142,10 +142,27 @@ class TenantApi:
     async def _preflight(self, schema: str) -> None:
         refuse_incompatible(await self.schema_meta(schema), spec_by_name(CURRENT_MCP_TOOL.get()))
 
-    async def _send(self, method: str, path: str, *, schema: str | None, params=None, json=None) -> dict:
+    async def _send(
+        self,
+        method: str,
+        path: str,
+        *,
+        schema: str | None,
+        params=None,
+        json=None,
+        data=None,
+        files=None,
+    ) -> dict:
         if schema is not None:
             await self._preflight(schema)
-        resp = await self._client.request(method, path, params=self._params(schema, params), json=json)
+        resp = await self._client.request(
+            method,
+            path,
+            params=self._params(schema, params),
+            json=json,
+            data=data,
+            files=files,
+        )
         if resp.status_code >= 400:
             await self._raise_http(resp)
         try:
@@ -159,8 +176,17 @@ class TenantApi:
     async def get(self, path: str, *, schema: str | None, params: dict | None = None) -> dict:
         return await self._send("GET", path, schema=schema, params=params)
 
-    async def post(self, path: str, *, schema: str | None, json: Any = None, params: dict | None = None) -> dict:
-        return await self._send("POST", path, schema=schema, params=params, json=json)
+    async def post(
+        self,
+        path: str,
+        *,
+        schema: str | None,
+        json: Any = None,
+        params: dict | None = None,
+        data: Any = None,
+        files: Any = None,
+    ) -> dict:
+        return await self._send("POST", path, schema=schema, params=params, json=json, data=data, files=files)
 
     async def patch(self, path: str, *, schema: str | None, json: Any = None, params: dict | None = None) -> dict:
         return await self._send("PATCH", path, schema=schema, params=params, json=json)

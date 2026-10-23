@@ -20,6 +20,7 @@ services:
     volumes:
       - ./config:/app/config:ro
       - giswater_api_logs:/app/logs
+      - giswater_api_cmms:/app/data/cmms
       - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
     extra_hosts:
       # Reach Postgres on the Docker host (Debian/Ubuntu production default).
@@ -41,3 +42,4 @@ services:
 
 volumes:
   giswater_api_logs:
+  giswater_api_cmms:

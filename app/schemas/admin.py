@@ -133,6 +133,7 @@ class TenantOut(BaseModel):
             "epa": s.api_epa,
             "features": s.api_features,
             "mcp": s.api_mcp,
+            "cmms": s.api_cmms,
         }
         db = DbSettingsOut(
             host=s.db_host,
@@ -242,6 +243,8 @@ def build_tenant_settings_from_input(
         api_epa=_api("epa"),
         api_features=_api("features"),
         api_mcp=_api("mcp"),
+        api_cmms=_api("cmms"),
+        cmms_max_upload_mb=existing.cmms_max_upload_mb if existing else 100,
         db_host=db.host,
         db_port=db.port,
         db_name=db.name,
