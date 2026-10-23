@@ -1,4 +1,4 @@
-"""Capability role names and require_capability('epa')."""
+"""Capability role names and require_capability."""
 
 from types import SimpleNamespace
 
@@ -7,18 +7,26 @@ from fastapi.testclient import TestClient
 
 from app.auth.schemas import ApiUser
 from app.auth.session import get_current_user, require_capability
-from app.core.config import TenantSettings, _build_tenant, normalize_role_names
+from app.core.config import CAPABILITIES, TenantSettings, _build_tenant, normalize_role_names
 from app.schemas.admin import DbSettingsIn, TenantIn, TenantOut, build_tenant_settings_from_input
 from app.tenancy.registry import serialize_tenant_settings
 
 
-def test_normalize_and_build_tenant_role_epa():
+def _default_roles() -> dict[str, str]:
+    return {cap.id: cap.default for cap in CAPABILITIES}
+
+
+def test_normalize_and_build_tenant_roles():
     assert normalize_role_names(None, default="epa") == "epa"
     assert normalize_role_names(" , ", default="epa") == "epa"
     assert normalize_role_names(" epa-role , epa ", default="epa") == "epa-role,epa"
-    settings = _build_tenant({"ROLE_EPA": "epa-role"})
+    settings = _build_tenant({"ROLE_EPA": "epa-role", "ROLE_PLAN": "planning"})
     assert settings.role_names("epa") == frozenset({"epa-role"})
-    assert _build_tenant({}).role_names("epa") == frozenset({"epa"})
+    assert settings.role_names("plan") == frozenset({"planning"})
+    bare = _build_tenant({})
+    for cap in CAPABILITIES:
+        assert bare.role_names(cap.id) == frozenset({cap.default})
+        assert getattr(bare, cap.field) == cap.default
 
 
 def test_unknown_capability_raises():
@@ -74,6 +82,14 @@ def test_epa_uses_renamed_role():
     assert _client(_user("legacy"), settings=settings).post("/epa").status_code == 200
 
 
+def test_plan_allowed_with_default_role():
+    assert _client(_user("plan"), capability="plan").post("/epa").status_code == 200
+
+
+def test_plan_forbidden_without_role():
+    assert _client(_user("epa"), capability="plan").post("/epa").status_code == 403
+
+
 def test_epa_skipped_for_anonymous():
     assert _client(_user(anonymous=True)).post("/epa").status_code == 200
 
@@ -82,20 +98,41 @@ def test_unknown_capability_fails_closed():
     assert _client(_user("epa"), capability="nope").post("/epa").status_code == 500
 
 
-def test_admin_round_trip_role_epa():
-    payload = TenantIn(db=DbSettingsIn(password="secret"), roles={"epa": " epa-role "})
+def test_admin_round_trip_roles():
+    payload = TenantIn(db=DbSettingsIn(password="secret"), roles={"epa": " epa-role ", "plan": "planning"})
     created = build_tenant_settings_from_input(payload)
     assert created.role_epa == "epa-role"
+    assert created.role_plan == "planning"
+    assert created.role_basic == "basic"
 
     kept = build_tenant_settings_from_input(TenantIn(db=DbSettingsIn(password="secret")), existing=created)
     assert kept.role_epa == "epa-role"
+    assert kept.role_plan == "planning"
+    assert kept.role_om == "om"
 
     reset = build_tenant_settings_from_input(
         TenantIn(db=DbSettingsIn(password="secret"), roles={"epa": ""}),
         existing=created,
     )
     assert reset.role_epa == "epa"
-    assert "ROLE_EPA=epa-role" in serialize_tenant_settings(created)
+    assert reset.role_plan == "planning"
+
+    ignored = build_tenant_settings_from_input(
+        TenantIn(db=DbSettingsIn(password="secret"), roles={"crm": "crm-role"}),
+        existing=created,
+    )
+    assert ignored.role_epa == "epa-role"
+    assert ignored.role_plan == "planning"
+
+    body = serialize_tenant_settings(created)
+    assert "ROLE_BASIC=basic" in body
+    assert "ROLE_EPA=epa-role" in body
+    assert "ROLE_PLAN=planning" in body
+    assert "ROLE_SYSTEM=system" in body
 
     tenant = SimpleNamespace(id="acme", settings=created, db_manager=SimpleNamespace(connection_pool=None))
-    assert TenantOut.from_tenant(tenant).roles == {"epa": "epa-role"}  # type: ignore[arg-type]
+    assert TenantOut.from_tenant(tenant).roles == {  # type: ignore[arg-type]
+        **_default_roles(),
+        "epa": "epa-role",
+        "plan": "planning",
+    }

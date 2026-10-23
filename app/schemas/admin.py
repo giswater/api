@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ..core.config import TenantSettings, normalize_role_names
+from ..core.config import CAPABILITIES, TenantSettings, normalize_role_names
 from ..tenancy.registry import Tenant
 
 AuthMode = Literal["none", "basic", "keycloak"]
@@ -197,7 +197,7 @@ class TenantOut(BaseModel):
             id=tenant.id,
             api=api,
             plugins=sorted(s.enabled_plugins),
-            roles={"epa": s.role_epa},
+            roles={cap.id: getattr(s, cap.field) for cap in CAPABILITIES},
             db=db,
             auth=auth,
             keycloak=keycloak_out,  # DEPRECATED #22: duplicate of auth.keycloak; remove in 2.0.0
@@ -277,12 +277,15 @@ def build_tenant_settings_from_input(
         api_features=_api("features"),
         api_mcp=_api("mcp"),
         enabled_plugins=_plugins(),
-        role_epa=_role_value(
-            payload.roles,
-            "epa",
-            existing_value=existing.role_epa if existing else None,
-            default="epa",
-        ),
+        **{
+            cap.field: _role_value(
+                payload.roles,
+                cap.id,
+                existing_value=getattr(existing, cap.field) if existing else None,
+                default=cap.default,
+            )
+            for cap in CAPABILITIES
+        },
         db_host=db.host,
         db_port=db.port,
         db_name=db.name,

@@ -10,9 +10,15 @@
   "bruteForceProtected": false,
   "roles": {
     "realm": [
+      { "name": "basic", "description": "Basic capability (dev)" },
+      { "name": "om", "description": "Operations capability (dev)" },
+      { "name": "edit", "description": "Edit capability (dev)" },
+      { "name": "epa", "description": "EPA capability (dev)" },
+      { "name": "plan", "description": "Plan capability (dev)" },
+      { "name": "admin", "description": "Admin capability (dev)" },
+      { "name": "system", "description": "System capability (dev)" },
       { "name": "role_om", "description": "Operations role (dev)" },
-      { "name": "role_master", "description": "Master role (dev)" },
-      { "name": "epa", "description": "EPA capability (dev)" }
+      { "name": "role_master", "description": "Master role (dev)" }
     ]
   },
   "clients": [
@@ -132,7 +138,7 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["role_om", "epa"]
+      "realmRoles": ["role_om", "basic", "om", "edit", "epa", "plan", "admin", "system"]
     },
     {
       "username": "service-account-giswater-worker",

@@ -169,7 +169,13 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
 | `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
 | `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
-| `ROLE_EPA` | `epa` | Keycloak realm/client role, or `gwapi` basic-auth role, that satisfies capability `epa` when auth is not `none`. Comma-separated names are OR. Empty falls back to `epa`. Admin API: `roles.epa`. |
+| `ROLE_BASIC` | `basic` | Keycloak realm/client role, or `gwapi` basic-auth role, that satisfies capability `basic` when auth is not `none`. Comma-separated names are OR. Empty falls back to `basic`. Admin API: `roles.basic`. |
+| `ROLE_OM` | `om` | Same contract as `ROLE_BASIC`, for capability `om`. Admin API: `roles.om`. |
+| `ROLE_EDIT` | `edit` | Same contract as `ROLE_BASIC`, for capability `edit`. Admin API: `roles.edit`. |
+| `ROLE_EPA` | `epa` | Same contract as `ROLE_BASIC`, for capability `epa`. Admin API: `roles.epa`. |
+| `ROLE_PLAN` | `plan` | Same contract as `ROLE_BASIC`, for capability `plan`. Admin API: `roles.plan`. |
+| `ROLE_ADMIN` | `admin` | Same contract as `ROLE_BASIC`, for capability `admin`. Admin API: `roles.admin`. |
+| `ROLE_SYSTEM` | `system` | Same contract as `ROLE_BASIC`, for capability `system`. Admin API: `roles.system`. |
 
 ### Database
 

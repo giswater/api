@@ -173,11 +173,28 @@ class GlobalSettings:
         return self.admin_password
 
 
-# Capability id -> TenantSettings field. Keycloak role names are not hardcoded on routes.
-_CAPABILITY_FIELDS = {
-    "epa": "role_epa",
-}
-_DEFAULT_ROLE_EPA = "epa"
+@dataclass(frozen=True)
+class Capability:
+    """One API capability and the tenant setting that names its roles."""
+
+    id: str
+    env: str
+    field: str
+    default: str
+
+
+# Order matches the Giswater PostgreSQL grant chain (basic through system).
+# Keycloak role names are not hardcoded on routes.
+CAPABILITIES: tuple[Capability, ...] = (
+    Capability("basic", "ROLE_BASIC", "role_basic", "basic"),
+    Capability("om", "ROLE_OM", "role_om", "om"),
+    Capability("edit", "ROLE_EDIT", "role_edit", "edit"),
+    Capability("epa", "ROLE_EPA", "role_epa", "epa"),
+    Capability("plan", "ROLE_PLAN", "role_plan", "plan"),
+    Capability("admin", "ROLE_ADMIN", "role_admin", "admin"),
+    Capability("system", "ROLE_SYSTEM", "role_system", "system"),
+)
+_CAPABILITY_BY_ID = {cap.id: cap for cap in CAPABILITIES}
 
 
 def normalize_role_names(value: str | None, *, default: str) -> str:
@@ -241,8 +258,14 @@ class TenantSettings:
     # Background jobs. Unset falls back to KEYCLOAK_CLIENT_*.
     worker_keycloak_client_id: str | None = None
     worker_keycloak_client_secret: str | None = None
-    # Capability ``epa``. Comma-separated names are OR. Empty falls back to the default.
+    # Capability role names. Comma-separated names are OR. Empty falls back to the default.
+    role_basic: str = "basic"
+    role_om: str = "om"
+    role_edit: str = "edit"
     role_epa: str = "epa"
+    role_plan: str = "plan"
+    role_admin: str = "admin"
+    role_system: str = "system"
 
     @property
     def keycloak_enabled(self) -> bool:
@@ -273,10 +296,10 @@ class TenantSettings:
 
     def role_names(self, capability: str) -> frozenset[str]:
         """Role names that satisfy ``capability``. Unknown ids raise KeyError."""
-        field = _CAPABILITY_FIELDS.get(capability)
-        if field is None:
+        cap = _CAPABILITY_BY_ID.get(capability)
+        if cap is None:
             raise KeyError(capability)
-        return role_name_set(getattr(self, field))
+        return role_name_set(getattr(self, cap.field))
 
 
 def _resolve_auth_mode(env: Mapping[str, str | None]) -> AuthMode:
@@ -380,7 +403,7 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         keycloak_callback_uri=env.get("KEYCLOAK_CALLBACK_URI") or None,
         worker_keycloak_client_id=env.get("WORKER_KEYCLOAK_CLIENT_ID") or None,
         worker_keycloak_client_secret=env.get("WORKER_KEYCLOAK_CLIENT_SECRET") or None,
-        role_epa=normalize_role_names(env.get("ROLE_EPA"), default=_DEFAULT_ROLE_EPA),
+        **{cap.field: normalize_role_names(env.get(cap.env), default=cap.default) for cap in CAPABILITIES},
     )
 
 

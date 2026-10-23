@@ -56,6 +56,8 @@ flowchart TD
   log tables fresh in `gwapi`, then drops the now-empty `log` schema.
 - `0002_gwapi_jobs` — creates `gwapi.jobs` and its indexes for the Celery job
   framework.
+- `0003_gwapi_capability_roles` — inserts the capability role names (`basic`,
+  `om`, `edit`, `epa`, `plan`, `admin`, `system`) into `gwapi.roles`.
 
 ### Legacy `log` schema compatibility (DEPRECATED #28)
 

@@ -13,7 +13,7 @@ First pull is ~500MB; Keycloak needs ~30–60s after `start-dev` before it answe
 
 - Admin console: http://auth.localhost:8080/admin (`admin` / `admin`)
 - Realm: `giswater` (imported from `giswater-realm.json`)
-- Test user: `test` / `test` (realm roles `role_om` and `epa`)
+- Test user: `test` / `test` (realm roles `basic`, `om`, `edit`, `epa`, `plan`, `admin`, `system`, and `role_om`)
 
 ## Point a tenant at it
 

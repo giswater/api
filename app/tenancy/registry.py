@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from fastapi_keycloak import FastAPIKeycloak
 
-from ..core.config import TenantSettings, global_settings, load_tenant_settings
+from ..core.config import CAPABILITIES, TenantSettings, global_settings, load_tenant_settings
 from ..db.manager import DatabaseManager
 from ..auth.keycloak import build_idp
 
@@ -107,7 +107,7 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
             "ENABLED_PLUGINS",
             ",".join(sorted(settings.enabled_plugins)) if settings.enabled_plugins else None,
         ),
-        ("ROLE_EPA", settings.role_epa),
+        *((cap.env, getattr(settings, cap.field)) for cap in CAPABILITIES),
         ("DB_HOST", settings.db_host),
         ("DB_PORT", settings.db_port),
         ("DB_NAME", settings.db_name),

@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Tenant setting `ROLE_EPA` (default `epa`, admin `roles.epa`). `require_capability("epa")` resolves the Keycloak or basic-auth role name from this setting. Comma-separated names are OR. Unset keeps the name `epa`.
+- Tenant settings `ROLE_BASIC`, `ROLE_OM`, `ROLE_EDIT`, `ROLE_EPA`, `ROLE_PLAN`, `ROLE_ADMIN` and `ROLE_SYSTEM` (defaults are the capability ids, admin `roles.<id>`). `require_capability` resolves the Keycloak or basic-auth role name from the matching setting. Comma-separated names are OR. Unset keeps the capability id. Checks are exact names; a higher Giswater role does not imply a lower one.
+- **Alembic revision `0003_gwapi_capability_roles`**: inserts `basic`, `om`, `edit`, `epa`, `plan`, `admin` and `system` into `gwapi.roles` so basic-auth can assign those capability names. Older catalog rows stay.
 - Worker Keycloak client settings `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (fallback: `KEYCLOAK_CLIENT_*`). Jobs that need a service account use that `client_credentials` token.
 - `role_connection` in `app/db/execution.py`: one `SET ROLE` for a multi-statement transaction. Callers commit on success; an exception rolls the transaction back, which clears both the role and the statements. `execute_sql*` signatures are unchanged.
 - **Celery + Redis** background job transport: `app/celery_app.py`, `app/tasks/` (`execute_job`, `reconcile_stale_jobs`, worker runtime). Postgres (`gwapi.jobs`) remains the source of truth; Redis is broker-only.
