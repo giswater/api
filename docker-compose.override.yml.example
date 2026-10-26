@@ -10,7 +10,9 @@
 services:
   app:
     volumes:
-      - .:/app:Z
+      # `:z` (shared): config/ lives in this tree and celery mounts it too.
+      # `:Z` would private-label it for this container and break the others.
+      - .:/app:z
       - giswater_api_logs:/app/logs
     command:
       - uvicorn
