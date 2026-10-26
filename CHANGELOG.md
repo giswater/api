@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`/cmms` visits and attachments** (list, get, create, update, delete, file download), gated by `API_CMMS`. Writes go to the singleton `cmms` schema; the DB user needs `role_cmms`. Uploads are stored under `CMMS_STORAGE_DIR` (default `data/cmms`, Docker volume `giswater_api_cmms`), capped by `CMMS_MAX_UPLOAD_MB` (default 100, 413 over the limit). Images and PDFs get a thumbnail; large images and HEIC/HEIF are resized (Pillow, pillow-heif, pypdfium2).
+- **CMMS MCP tools**: `list_visits`, `get_visit`, `create_visit`, `update_visit`, `delete_visit`, `list_attachments`, `get_attachment`. File upload stays on the REST API.
 - Tenant settings `ROLE_BASIC`, `ROLE_OM`, `ROLE_EDIT`, `ROLE_EPA`, `ROLE_PLAN`, `ROLE_ADMIN` and `ROLE_SYSTEM` (defaults are the capability ids, admin `roles.<id>`). `require_capability` resolves the Keycloak or basic-auth role name from the matching setting. Comma-separated names are OR. Unset keeps the capability id. Checks are exact names; a higher Giswater role does not imply a lower one.
 - **Alembic revision `0003_gwapi_capability_roles`**: replaces the unused `gwapi.roles` rows from `0001` (`role_basic`, `role_edit`, `role_om`, `role_epa`, `role_master`) with `basic`, `om`, `edit`, `epa`, `plan`, `admin` and `system`.
 - Worker Keycloak client settings `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (fallback: `KEYCLOAK_CLIENT_*`). Jobs that need a service account use that `client_credentials` token.
