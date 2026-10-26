@@ -36,6 +36,8 @@ from .tenancy.host_middleware import host_middleware
 from .tenancy.registry import Tenant, TenantRegistry
 from .utils.log_setup import create_log
 from .utils.plugins import load_plugins
+from .jobs.types import load_job_types
+from .mcp import runtime as mcp_runtime
 
 TITLE = "Giswater API"
 VERSION = pkg_version("giswater-api")
@@ -144,6 +146,8 @@ async def lifespan(_app: FastAPI):
     if not registry.is_empty():
         logger.info("Loaded tenants from %s: %s", tenants_dir, registry.ids())
 
+    load_job_types()
+
     state.registry = registry
     state.global_logger = create_log("api", os.path.join(global_settings.log_dir, "_global"))
 
@@ -207,5 +211,15 @@ for _app in (parent, tenant_app_v1, tenant_app_v2, admin_app):
 
 # TODO: Think about how to handle plugins for v2
 load_plugins(tenant_app_v1)
+
+# TODO: MCP for v2
+mcp_runtime.configure(root_app=parent)
+tenant_app_v1.add_api_route(
+    "/mcp",
+    mcp_runtime.mcp_http_endpoint,
+    methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
+    include_in_schema=False,
+)
+tenant_app_v1.mount("/mcp", mcp_runtime.mcp_dispatch)
 
 app = parent

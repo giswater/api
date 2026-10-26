@@ -271,6 +271,23 @@ class BaseAPIResponse(BaseModel, Generic[T]):
     body: T = Field(..., description="Body of the response")
 
 
+class SchemaInfo(BaseModel):
+    """One Giswater project schema discovered in the tenant database."""
+
+    model_config = {"populate_by_name": True}
+
+    schema_name: str = Field(..., alias="schema", description="Schema name")
+    project_type: Optional[str] = Field(None, description="WS or UD (from sys_version)")
+    giswater: Optional[str] = Field(None, description="Giswater version string")
+    epsg: Optional[int] = Field(None, description="Project EPSG code from sys_version")
+
+
+class SchemasResponse(BaseModel):
+    """List of Giswater project schemas on the current tenant."""
+
+    schemas: List[SchemaInfo] = Field(default_factory=list, description="Discovered schemas")
+
+
 class GwErrorResponse(BaseModel):
     """Gw error response model"""
 
@@ -326,9 +343,11 @@ class PageInfoReturnModel(BaseModel):
 
 
 class FilterFieldModel(BaseModel):
-    """Filter field model"""
+    """Filter field model.
 
-    value: Any = Field(..., description="Value")
-    filterSign: Literal["=", ">", "<", ">=", "<=", "LIKE", "ILIKE", "BETWEEN", "IN"] = Field(
-        "=", description="Filter sign"
-    )
+    ``filterSign=IN`` expects ``value`` to be a JSON array (e.g. ``["A","B"]``).
+    ``BETWEEN`` is not supported by ``gw_fct_build_filters_sql`` via this model.
+    """
+
+    value: Any = Field(..., description="Value (array when filterSign is IN)")
+    filterSign: Literal["=", ">", "<", ">=", "<=", "LIKE", "ILIKE", "IN"] = Field("=", description="Filter sign")

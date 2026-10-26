@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/cmms` visits and attachments** (list, get, create, update, delete, file download), gated by `API_CMMS`. Writes go to the singleton `cmms` schema; the DB user needs `role_cmms`. Uploads are stored under `CMMS_STORAGE_DIR` (default `data/cmms`, Docker volume `giswater_api_cmms`), capped by `CMMS_MAX_UPLOAD_MB` (default 100, 413 over the limit). Images and PDFs get a thumbnail; large images and HEIC/HEIF are resized (Pillow, pillow-heif, pypdfium2).
+- **CMMS MCP tools**: `list_visits`, `get_visit`, `create_visit`, `update_visit`, `delete_visit`, `list_attachments`, `get_attachment`. File upload stays on the REST API.
+- Tenant settings `ROLE_BASIC`, `ROLE_OM`, `ROLE_EDIT`, `ROLE_EPA`, `ROLE_PLAN`, `ROLE_ADMIN` and `ROLE_SYSTEM` (defaults are the capability ids, admin `roles.<id>`). `require_capability` resolves the Keycloak or basic-auth role name from the matching setting. Comma-separated names are OR. Unset keeps the capability id. Checks are exact names; a higher Giswater role does not imply a lower one.
+- **Alembic revision `0003_gwapi_capability_roles`**: replaces the unused `gwapi.roles` rows from `0001` (`role_basic`, `role_edit`, `role_om`, `role_epa`, `role_master`) with `basic`, `om`, `edit`, `epa`, `plan`, `admin` and `system`.
+- Worker Keycloak client settings `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (fallback: `KEYCLOAK_CLIENT_*`). Jobs that need a service account use that `client_credentials` token.
+- `role_connection` in `app/db/execution.py`: one `SET ROLE` for a multi-statement transaction. Callers commit on success; an exception rolls the transaction back, which clears both the role and the statements. `execute_sql*` signatures are unchanged.
+- **Celery + Redis** background job transport: `app/celery_app.py`, `app/tasks/` (`execute_job`, `reconcile_stale_jobs`, worker runtime). Postgres (`gwapi.jobs`) remains the source of truth; Redis is broker-only.
+- **Alembic revision `0002_gwapi_jobs`**: creates `gwapi.jobs` (progress column, indexes) as part of the API-owned schema.
+- Job progress reporting (`app/jobs/progress.py`) and background-job Keycloak auth (`app/jobs/worker_auth.py`). Jobs use a service account (`client_credentials`), preferring `WORKER_KEYCLOAK_CLIENT_*` and falling back to `KEYCLOAK_CLIENT_*`.
+- Docker Compose services: `redis`, `celery-worker`, `celery-beat` (dev and production `deploy/docker-compose.yml`).
+- Tests: `test_jobs_execute_task`, `test_jobs_reconcile`, `test_jobs_registry`.
+
+### Changed
+
+- Job status includes `step_durations_ms` with the elapsed time of each progress step.
+- **Breaking:** run jobs with `celery -A app.celery_app worker -Q giswater.jobs` (polling worker removed earlier).
+- `ensure_tenant_database` always runs Alembic when the tenant has a DB pool (jobs need `gwapi.jobs` regardless of auth mode / logging).
+- `JobService.create_job` enqueues Celery tasks after DB insert.
+- Job HTTP DTOs live in `app/schemas/jobs.py`; domain models stay in `app/jobs/models.py`.
+
+### Fixed
+
+- Drop session temp tables when a pooled connection is returned, so a later request does not fail on objects owned by another role (mincut and other graph functions).
+
+## [1.8.1] - 2026-09-28
+
+### Fixed
+
+- Only upgrade once, don't let all workers try to upgrade at the same time.
+
+## [1.8.0] - 2026-09-23
+
+### Added
+
+- **Curated MCP server** at `${API_ROOT}/v1/mcp/` (Streamable HTTP). One FastMCP instance per tenant, task-shaped tools over the REST API, gated by process `MCP_ENABLED` and per-tenant `API_MCP`.
+- **`GET ${API_ROOT}/v1/schemas`**: list Giswater project schemas (`sys_version`) with `project_type`, version, and optional `epsg`.
+- **`GET ${API_ROOT}/v1/crm/hydrometers`**: read hydrometers (`code` / `connecId` / `dmaId` / `mincutId` / `customerCode` / `limit`). Joins `v_hydrometer` / `ve_connec`; rows expose `connec_id`, `dma_id`, `customer_code`.
+- **`/features` endpoints**: typed filters for nodes/arcs/links/connecs/gullies (list + GeoJSON collection + by-id fields, form, and GeoJSON Feature), gated by `API_FEATURES`.
+- **`GET ${API_ROOT}/v1/streets`** and **`GET ${API_ROOT}/v1/streets/{id}/arcs`**: street-axis search and candidate arcs (`streetaxis_id` union spatial buffer). Gated by `API_BASIC`.
+
+### Changed
+
+- **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.0** (refactored `gw_fct_getfeatures` with `featureType` / `outputFormat`). Compatibility table: **1.7.x → Giswater DB ≥ 4.17.0**.
+- **`gw_fct_getprofilevalues` extras key** `midNodes` → `midFeatures` (`app/services/om/profile_service.py`).
+- **Profile arc `omunit_id`** is optional (widen). Rows that omit it no longer 500.
+- **Hydrometer writes** map REST camelCase to `gw_fct_set_hydrometers` keys (`hydro_number`, `feature_customer_code`, `state_id`, …). `customerCode` is the CRM link; `connecId` is resolved to `ve_connec.customer_code`.
+- **Mincut request bodies** (`POST /om/mincuts`, `PATCH /om/mincuts/{id}`, `POST .../start`, `end`, valve toggles) take a JSON object (`Mincut*Params`). Create takes `arcId` or `coordinates` (exactly one). Toggle routes still accept a bare boolean.
+
+### Deprecated
+
+- **`GET /om/dmas/{dma_id}/connecs`**: prefer `GET /features/connecs?dma_id={dma_id}`.
+- **`middle_nodes`** on `POST /om/profiles` (`DEPRECATED #37`; removal in **2.0.0**). Use `middle_features`. If both are sent, `middle_features` wins.
+- **Hydrometer `connecId` on write**: prefer `customerCode`. `connecId` is still resolved to the connec's `customer_code`.
+- **Bare boolean body** on `POST /om/mincuts/{id}/valves/{valve_id}/toggle-unaccess` and `toggle-status`. Prefer `{"use_psectors": false}`. Scalar `true`/`false` is still accepted.
+
 ## [1.7.0] - 2026-08-05
 
 ### Added
@@ -365,7 +422,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.7.0...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.8.1...main
+[1.8.1]: https://github.com/Giswater/giswater-api/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/Giswater/giswater-api/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Giswater/giswater-api/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/Giswater/giswater-api/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/Giswater/giswater-api/compare/v1.6.0...v1.6.1

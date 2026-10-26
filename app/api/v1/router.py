@@ -11,8 +11,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, FastAPI
 from starlette.routing import BaseRoute
 
-from app.api.deps import require_feature
-from app.api.v1.endpoints import auth, basic, crm, system
+from app.api.deps import PLUGIN_BY_ENDPOINT, require_feature
+from app.api.v1.endpoints import auth, basic, cmms, crm, features, streets, system, jobs
 from app.api.v1.endpoints.epa import dscenario
 from app.api.v1.endpoints.om import flow, mincut, profile, waterbalance
 from app.api.v1.endpoints.om.mapzones import dma, dqa, omunit, omzone, presszone, sector
@@ -22,12 +22,15 @@ from app.tenancy.registry import Tenant
 # Tuple list: `APIRouter` is not hashable in Python 3.13+ (cannot use as dict keys).
 ROUTER_FEATURES: list[tuple[APIRouter, str]] = [
     (basic.router, "api_basic"),
+    (streets.router, "api_basic"),
+    (features.router, "api_features"),
     (profile.router, "api_profile"),
     (flow.router, "api_flow"),
     (mincut.router, "api_mincut"),
     (waterbalance.router, "api_water_balance"),
     (routing.router, "api_routing"),
     (crm.router, "api_crm"),
+    (cmms.router, "api_cmms"),
     (dscenario.router, "api_epa"),
     (dma.router, "api_mapzones"),
     (sector.router, "api_mapzones"),
@@ -54,17 +57,26 @@ def register_v1(tenant_app: FastAPI) -> None:
     for router, flag in ROUTER_FEATURES:
         tenant_app.include_router(router, dependencies=[Depends(require_feature(flag))])
     tenant_app.include_router(system.router)
+    tenant_app.include_router(jobs.router)
     tenant_app.include_router(auth.router)
 
 
 def tenant_openapi_routes(tenant_app: FastAPI, tenant: Tenant) -> list[BaseRoute]:
-    """Routes to expose in OpenAPI for this tenant (feature toggles)."""
+    """Routes to expose in OpenAPI for this tenant (feature + plugin toggles)."""
     out: list[BaseRoute] = []
     for route in tenant_app.routes:
         ep = getattr(route, "endpoint", None)
-        flag = FEATURE_BY_ENDPOINT.get(ep) if callable(ep) else None
+        if not callable(ep):
+            out.append(route)
+            continue
         if ep in KEYCLOAK_ONLY_ENDPOINTS and tenant.settings.auth_mode != "keycloak":
             continue
+        plugin_id = PLUGIN_BY_ENDPOINT.get(ep)
+        if plugin_id is not None:
+            if tenant.settings.plugin_enabled(plugin_id):
+                out.append(route)
+            continue
+        flag = FEATURE_BY_ENDPOINT.get(ep)
         if flag is None or getattr(tenant.settings, flag, False):
             out.append(route)
     return out

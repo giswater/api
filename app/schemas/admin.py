@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ..core.config import TenantSettings
+from ..core.config import CAPABILITIES, TenantSettings, normalize_role_names
 from ..tenancy.registry import Tenant
 
 AuthMode = Literal["none", "basic", "keycloak"]
@@ -62,6 +62,8 @@ class KeycloakSettingsIn(BaseModel):
     admin_client_id: Optional[str] = None
     admin_client_secret: Optional[str] = None
     callback_uri: Optional[str] = None
+    worker_client_id: Optional[str] = None
+    worker_client_secret: Optional[str] = None
 
 
 class KeycloakSettingsOut(BaseModel):
@@ -73,6 +75,8 @@ class KeycloakSettingsOut(BaseModel):
     admin_client_id: Optional[str] = None
     admin_client_secret: Optional[str] = None  # _REDACTED or null
     callback_uri: Optional[str] = None
+    worker_client_id: Optional[str] = None
+    worker_client_secret: Optional[str] = None  # _REDACTED or null
 
 
 class AuthSettingsIn(BaseModel):
@@ -95,6 +99,9 @@ class AuthSettingsOut(BaseModel):
 
 class TenantIn(BaseModel):
     api: dict[str, bool] = Field(default_factory=dict)
+    plugins: Optional[list[str]] = None
+    # Capability id -> comma-separated role names. Omitted keys keep the current value.
+    roles: Optional[dict[str, str]] = None
     db: DbSettingsIn
     auth: Optional[AuthSettingsIn] = None
     keycloak: Optional[KeycloakSettingsIn] = None  # DEPRECATED #22: use auth.keycloak
@@ -113,6 +120,8 @@ class PoolStatus(BaseModel):
 class TenantOut(BaseModel):
     id: str
     api: dict[str, bool]
+    plugins: list[str]
+    roles: dict[str, str]
     db: DbSettingsOut
     auth: AuthSettingsOut
     keycloak: Optional[KeycloakSettingsOut] = None  # DEPRECATED #22: use auth.keycloak
@@ -131,6 +140,9 @@ class TenantOut(BaseModel):
             "routing": s.api_routing,
             "crm": s.api_crm,
             "epa": s.api_epa,
+            "features": s.api_features,
+            "mcp": s.api_mcp,
+            "cmms": s.api_cmms,
         }
         db = DbSettingsOut(
             host=s.db_host,
@@ -155,6 +167,7 @@ class TenantOut(BaseModel):
                 s.keycloak_client_id,
                 s.keycloak_admin_client_id,
                 s.keycloak_callback_uri,
+                s.worker_keycloak_client_id,
             )
         ):
             keycloak_out = KeycloakSettingsOut(
@@ -166,6 +179,8 @@ class TenantOut(BaseModel):
                 admin_client_id=s.keycloak_admin_client_id,
                 admin_client_secret=_REDACTED if s.keycloak_admin_client_secret else None,
                 callback_uri=s.keycloak_callback_uri,
+                worker_client_id=s.worker_keycloak_client_id,
+                worker_client_secret=_REDACTED if s.worker_keycloak_client_secret else None,
             )
         auth = AuthSettingsOut(
             mode=s.auth_mode,
@@ -182,11 +197,28 @@ class TenantOut(BaseModel):
         return cls(
             id=tenant.id,
             api=api,
+            plugins=sorted(s.enabled_plugins),
+            roles={cap.id: getattr(s, cap.field) for cap in CAPABILITIES},
             db=db,
             auth=auth,
             keycloak=keycloak_out,  # DEPRECATED #22: duplicate of auth.keycloak; remove in 2.0.0
             pool=pool_status,
         )
+
+
+def _role_value(
+    payload_roles: dict[str, str] | None,
+    capability: str,
+    *,
+    existing_value: str | None,
+    default: str,
+) -> str:
+    """Resolve one capability's role string. Omitted keys keep ``existing_value``."""
+    if payload_roles is not None and capability in payload_roles:
+        return normalize_role_names(payload_roles[capability], default=default)
+    if existing_value is not None:
+        return existing_value
+    return default
 
 
 def build_tenant_settings_from_input(
@@ -204,6 +236,11 @@ def build_tenant_settings_from_input(
         if name in api:
             return bool(api[name])
         return bool(getattr(existing, f"api_{name}", False)) if existing else False
+
+    def _plugins() -> frozenset[str]:
+        if payload.plugins is not None:
+            return frozenset(p.strip() for p in payload.plugins if p.strip())
+        return existing.enabled_plugins if existing else frozenset()
 
     db = payload.db
     auth = payload.auth
@@ -238,6 +275,20 @@ def build_tenant_settings_from_input(
         api_routing=_api("routing"),
         api_crm=_api("crm"),
         api_epa=_api("epa"),
+        api_features=_api("features"),
+        api_mcp=_api("mcp"),
+        api_cmms=_api("cmms"),
+        cmms_max_upload_mb=existing.cmms_max_upload_mb if existing else 100,
+        enabled_plugins=_plugins(),
+        **{
+            cap.field: _role_value(
+                payload.roles,
+                cap.id,
+                existing_value=getattr(existing, cap.field) if existing else None,
+                default=cap.default,
+            )
+            for cap in CAPABILITIES
+        },
         db_host=db.host,
         db_port=db.port,
         db_name=db.name,
@@ -265,4 +316,14 @@ def build_tenant_settings_from_input(
             _kept(kc.admin_client_secret, existing.keycloak_admin_client_secret if existing else None) if kc else None
         ),
         keycloak_callback_uri=kc.callback_uri if kc else None,
+        worker_keycloak_client_id=(
+            _kept(kc.worker_client_id, existing.worker_keycloak_client_id if existing else None)
+            if kc
+            else (existing.worker_keycloak_client_id if existing else None)
+        ),
+        worker_keycloak_client_secret=(
+            _kept(kc.worker_client_secret, existing.worker_keycloak_client_secret if existing else None)
+            if kc
+            else (existing.worker_keycloak_client_secret if existing else None)
+        ),
     )

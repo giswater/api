@@ -168,7 +168,7 @@ class ArcModel(BaseModel):
     elev2: float = Field(..., description="Elevation 2")
     node_1: int = Field(..., description="Node 1")
     node_2: int = Field(..., description="Node 2")
-    omunit_id: int = Field(..., description="OM unit id")
+    omunit_id: Optional[int] = Field(None, description="OM unit id")
 
 
 class StyleValueModel(BaseModel):

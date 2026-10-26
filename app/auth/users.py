@@ -313,7 +313,7 @@ async def maybe_bootstrap_user(db_manager, settings: TenantSettings) -> None:
             username=username,
             password=password,
             db_role=username,
-            roles=["role_basic"],
+            roles=["basic"],
             enabled=True,
         )
         logger.info("Bootstrapped basic auth user '%s'", username)

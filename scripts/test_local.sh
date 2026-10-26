@@ -18,12 +18,19 @@
 #   DB_PORT=5432                    (host port to publish; conftest reads it
 #                                   to render a per-run tenant .env)
 #   PG_TAG=main-pg17                (image tag prefix; suffix -ws/-ud appended)
+#   PULL=newer|never                (refresh the moving image tag; never = offline)
 #   CONTAINER_NAME=gw_db_test
 #   KEEP_DB=1                       (don't remove container after tests)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+# Prefer the project venv: a `pytest` picked up from ~/.local/bin runs against a
+# different interpreter and dependency set than CI's `pip install ".[dev]"`.
+if [[ -x "${ROOT}/.venv/bin/pytest" ]]; then
+  PATH="${ROOT}/.venv/bin:${PATH}"
+fi
 
 DOCKER="${DOCKER:-}"
 if [[ -z "${DOCKER}" ]]; then
@@ -103,7 +110,11 @@ run_variant() {
 
   echo "==> [${variant}] booting ${image} on :${DB_PORT}"
   "${DOCKER}" rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  # `main-pg17-*` is a moving tag: GH Actions always fetches it fresh, so refresh
+  # the local copy too or the suite runs against a stale dump and diverges from CI.
+  # PULL=never skips this when offline.
   "${DOCKER}" run -d --rm --name "${CONTAINER_NAME}" \
+    --pull="${PULL:-newer}" \
     -p "${DB_PORT}:5432" \
     -e POSTGRES_DB=gw_db \
     -e POSTGRES_USER=postgres \

@@ -45,7 +45,7 @@ def _tenant_env_body(auth_mode: str) -> str:
     return (
         "API_BASIC=true\nAPI_PROFILE=true\nAPI_FLOW=true\nAPI_MINCUT=true\n"
         "API_WATER_BALANCE=true\nAPI_MAPZONES=true\nAPI_ROUTING=true\n"
-        "API_CRM=true\nAPI_EPA=true\n"
+        "API_CRM=true\nAPI_EPA=true\nAPI_FEATURES=true\nAPI_MCP=true\n"
         f"DB_HOST={db_host}\nDB_PORT={db_port}\nDB_NAME={db_name}\n"
         f"DB_USER={db_user}\nDB_PASSWORD={db_password}\nDB_SCHEMA={db_schema}\n"
         f'DATABASE_URL="{db_url}"\n'
@@ -206,7 +206,7 @@ def test_admin_users_smoke(client):
                 "username": "extra_user",
                 "password": "extrauser1",
                 "db_role": pg_role,
-                "roles": ["role_basic"],
+                "roles": ["basic"],
             },
             headers=admin_headers,
             auth=("admin", "admin"),
@@ -219,7 +219,7 @@ def test_admin_users_smoke(client):
                 "username": "extra_user",
                 "password": "extrauser1",
                 "db_role": pg_role,
-                "roles": ["role_basic"],
+                "roles": ["basic"],
             },
             headers=admin_headers,
             auth=("admin", "admin"),
