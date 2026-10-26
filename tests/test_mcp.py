@@ -180,6 +180,7 @@ def test_mcp_isolation_no_crm_leak(client):
     names_a = _tool_names(client, host="test.bgeo360.com")
     names_b = _tool_names(client, host="isolated.bgeo360.com")
     assert "list_hydrometers" in names_a
+    assert "list_visits" in names_a
     assert "list_hydrometers" not in names_b
     init_a, _ = _initialize(client, host="test.bgeo360.com")
     session_a = init_a.headers.get("mcp-session-id")
@@ -291,6 +292,13 @@ def test_mcp_find_features_gully(client, default_params):
 _EXPECTED_TOOLS = {
     "list_schemas",
     "list_hydrometers",
+    "list_visits",
+    "get_visit",
+    "list_attachments",
+    "get_attachment",
+    "create_visit",
+    "update_visit",
+    "delete_visit",
     "list_dscenarios",
     "list_dscenario_objects",
     "create_dscenario",
@@ -320,6 +328,10 @@ _EXPECTED_TOOLS = {
 _READ_ONLY = {
     "list_schemas",
     "list_hydrometers",
+    "list_visits",
+    "get_visit",
+    "list_attachments",
+    "get_attachment",
     "list_dscenarios",
     "list_dscenario_objects",
     "find_features",
@@ -342,6 +354,7 @@ _DESTRUCTIVE = {
     "manage_dscenario_objects",
     "set_mincut_state",
     "delete_mincut",
+    "delete_visit",
 }
 
 

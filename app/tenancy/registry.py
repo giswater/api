@@ -103,6 +103,8 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("API_EPA", settings.api_epa),
         ("API_FEATURES", settings.api_features),
         ("API_MCP", settings.api_mcp),
+        ("API_CMMS", settings.api_cmms),
+        ("CMMS_MAX_UPLOAD_MB", settings.cmms_max_upload_mb),
         (
             "ENABLED_PLUGINS",
             ",".join(sorted(settings.enabled_plugins)) if settings.enabled_plugins else None,

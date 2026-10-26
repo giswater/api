@@ -163,6 +163,9 @@ class GlobalSettings:
     mcp_enabled: bool = True
     mcp_timeout: float = 60.0
 
+    # CMMS attachment files (per tenant subdirectory). Relative paths are stored in cmms.attachment.
+    cmms_storage_dir: str = "data/cmms"
+
     # Legacy aliases (kept for the duration of the multi-tenant migration).
     @property
     def log_admin_user(self) -> str:
@@ -225,6 +228,8 @@ class TenantSettings:
     api_epa: bool = False
     api_features: bool = False
     api_mcp: bool = False
+    api_cmms: bool = False
+    cmms_max_upload_mb: int = 100
     enabled_plugins: frozenset[str] = frozenset()
 
     # Database
@@ -361,6 +366,7 @@ def _build_global(env: Mapping[str, str | None]) -> GlobalSettings:
         db_migrate_timeout=_to_float(env.get("DB_MIGRATE_TIMEOUT"), 30.0),
         mcp_enabled=_to_bool(env.get("MCP_ENABLED"), True),
         mcp_timeout=_to_float(env.get("MCP_TIMEOUT"), 60.0),
+        cmms_storage_dir=(env.get("CMMS_STORAGE_DIR") or "data/cmms"),
     )
 
 
@@ -377,6 +383,8 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         api_epa=_to_bool(env.get("API_EPA"), False),
         api_features=_to_bool(env.get("API_FEATURES"), False),
         api_mcp=_to_bool(env.get("API_MCP"), False),
+        api_cmms=_to_bool(env.get("API_CMMS"), False),
+        cmms_max_upload_mb=_to_int(env.get("CMMS_MAX_UPLOAD_MB"), 100),
         enabled_plugins=_to_plugin_list(env.get("ENABLED_PLUGINS")),
         db_host=(env.get("DB_HOST") or "localhost"),
         db_port=(env.get("DB_PORT") or "5432"),

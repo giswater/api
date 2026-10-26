@@ -41,6 +41,7 @@ Request logging writes JSON lines to rotating files under `LOG_DIR`, and optiona
 | -------- | ------- | ----------- |
 | `LOG_LEVEL` | `INFO` | Root logging level for handlers created via `create_log` (e.g. `DEBUG`, `INFO`, `WARNING`). |
 | `LOG_DIR` | `logs` | Base directory for API log files (`\<LOG_DIR\>/\<tenant_or_global\>/\<YYYYMMDD\>/`). |
+| `CMMS_STORAGE_DIR` | `data/cmms` | CMMS attachment files. The API writes `{dir}/{tenant_id}/{attachment_id}/` and stores paths relative to this directory, so the mount can move. In Docker, mount a volume at this path (the production entrypoint chowns it to the app user). |
 | `LOG_ROTATE_DAYS` | `14` | Number of rotated daily log files to retain. |
 | `LOG_DB_ENABLED` | `true` | When `true`, eligible tenant requests may insert rows into the tenant DB API log schema (subject to sample rate). |
 | `LOG_DB_SAMPLE_RATE` | `1.0` | Fraction (0–1) of tenant-scoped requests that pass random sampling for **DB** log inserts. `1.0` means every eligible request is considered (typical for QGIS plugin traffic). `0` turns off DB sampling together with `LOG_DB_ENABLED` logic; prefer `LOG_DB_ENABLED=false` to disable DB logging entirely. Lower the rate if the log table becomes a bottleneck. |
@@ -168,6 +169,8 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
 | `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
 | `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
+| `API_CMMS` | `false` | CMMS visits and attachments (`/cmms`). Writes go to the singleton `cmms` schema; the DB user needs membership in `role_cmms`. |
+| `CMMS_MAX_UPLOAD_MB` | `100` | Max size of one CMMS upload, in MB. Checked while the file is written; over the limit returns 413 and leaves nothing on disk. The reverse proxy body limit must be at least this large (`client_max_body_size` in nginx). |
 | `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
 | `ROLE_BASIC` | `basic` | Keycloak realm/client role, or `gwapi` basic-auth role, that satisfies capability `basic` when auth is not `none`. Comma-separated names are OR. Empty falls back to `basic`. Admin API: `roles.basic`. |
 | `ROLE_OM` | `om` | Same contract as `ROLE_BASIC`, for capability `om`. Admin API: `roles.om`. |

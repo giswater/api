@@ -18,6 +18,7 @@ __pycache__/
 *.log
 *.tmp
 logs/
+data/
 
 # Local dev compose override (template at docker-compose.override.yml.example)
 docker-compose.override.yml

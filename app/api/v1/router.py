@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from starlette.routing import BaseRoute
 
 from app.api.deps import PLUGIN_BY_ENDPOINT, require_feature
-from app.api.v1.endpoints import auth, basic, crm, features, streets, system, jobs
+from app.api.v1.endpoints import auth, basic, cmms, crm, features, streets, system, jobs
 from app.api.v1.endpoints.epa import dscenario
 from app.api.v1.endpoints.om import flow, mincut, profile, waterbalance
 from app.api.v1.endpoints.om.mapzones import dma, dqa, omunit, omzone, presszone, sector
@@ -30,6 +30,7 @@ ROUTER_FEATURES: list[tuple[APIRouter, str]] = [
     (waterbalance.router, "api_water_balance"),
     (routing.router, "api_routing"),
     (crm.router, "api_crm"),
+    (cmms.router, "api_cmms"),
     (dscenario.router, "api_epa"),
     (dma.router, "api_mapzones"),
     (sector.router, "api_mapzones"),
