@@ -3,8 +3,11 @@
 #   - Windows / macOS + Docker Desktop
 #   - Debian/Ubuntu + Docker (production)
 #
-# `:Z` is an SELinux relabel hint. Podman/CRI-O honor it; Docker silently
-# ignores it on non-SELinux hosts, so it is portable.
+# `:z` / `:Z` are SELinux relabel hints. Podman/CRI-O honor them; Docker
+# silently ignores them on non-SELinux hosts, so they are portable.
+# Shared bind mounts (config/ is used by app, celery-worker, and
+# celery-beat) must use `:z`. `:Z` is a private label: the last container
+# to start owns the directory and the others get Permission denied.
 #
 # For dev hot-reload of code, use docker-compose.override.yml (gitignored)
 # to also bind-mount `.:/app`. The base file ships only the mounts the
@@ -26,7 +29,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
-      - ./config:/app/config:Z
+      - ./config:/app/config:z
       - giswater_api_logs:/app/logs
       - giswater_api_cmms:/app/data/cmms
     extra_hosts:
@@ -71,7 +74,7 @@ services:
     depends_on:
       - redis
     volumes:
-      - ./config:/app/config:Z
+      - ./config:/app/config:z
       - giswater_api_logs:/app/logs
     extra_hosts:
       - "host.containers.internal:host-gateway"
@@ -92,7 +95,7 @@ services:
     depends_on:
       - redis
     volumes:
-      - ./config:/app/config:Z
+      - ./config:/app/config:z
       - giswater_api_logs:/app/logs
     extra_hosts:
       - "host.containers.internal:host-gateway"
