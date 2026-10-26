@@ -52,6 +52,13 @@ def _to_float(value, default: float) -> float:
         return default
 
 
+def _to_plugin_list(value: str | None) -> frozenset[str]:
+    """Parse a comma-separated plugin allowlist (folder names from ``plugins/``)."""
+    if not value:
+        return frozenset()
+    return frozenset(part.strip() for part in value.split(",") if part.strip())
+
+
 def _normalize_api_root(value: str | None, default: str = "/giswater") -> str:
     """Normalize and validate the public API root prefix (e.g. ``/giswater``).
 
@@ -131,6 +138,10 @@ class GlobalSettings:
     # Dev
     dev_allow_tenant_header: bool = False
 
+    # Jobs / Celery
+    celery_broker_url: str = "redis://localhost:6379/0"
+    jobs_stale_after_seconds: int = 7200
+
     # Platform Keycloak (separate from per-tenant Keycloak)
     platform_keycloak_enabled: bool = False
     platform_keycloak_url: str | None = None
@@ -163,6 +174,42 @@ class GlobalSettings:
 
 
 @dataclass(frozen=True)
+class Capability:
+    """One API capability and the tenant setting that names its roles."""
+
+    id: str
+    env: str
+    field: str
+    default: str
+
+
+# Order matches the Giswater PostgreSQL grant chain (basic through system).
+# Keycloak role names are not hardcoded on routes.
+CAPABILITIES: tuple[Capability, ...] = (
+    Capability("basic", "ROLE_BASIC", "role_basic", "basic"),
+    Capability("om", "ROLE_OM", "role_om", "om"),
+    Capability("edit", "ROLE_EDIT", "role_edit", "edit"),
+    Capability("epa", "ROLE_EPA", "role_epa", "epa"),
+    Capability("plan", "ROLE_PLAN", "role_plan", "plan"),
+    Capability("admin", "ROLE_ADMIN", "role_admin", "admin"),
+    Capability("system", "ROLE_SYSTEM", "role_system", "system"),
+)
+_CAPABILITY_BY_ID = {cap.id: cap for cap in CAPABILITIES}
+
+
+def normalize_role_names(value: str | None, *, default: str) -> str:
+    """Comma-separated role names. Empty or unset falls back to ``default``."""
+    parts = [part.strip() for part in (value or "").split(",") if part.strip()]
+    if not parts:
+        return default
+    return ",".join(parts)
+
+
+def role_name_set(value: str) -> frozenset[str]:
+    return frozenset(part.strip() for part in value.split(",") if part.strip())
+
+
+@dataclass(frozen=True)
 class TenantSettings:
     """Per-tenant configuration loaded from `config/tenants/<id>.env`."""
 
@@ -178,6 +225,7 @@ class TenantSettings:
     api_epa: bool = False
     api_features: bool = False
     api_mcp: bool = False
+    enabled_plugins: frozenset[str] = frozenset()
 
     # Database
     db_host: str = "localhost"
@@ -207,6 +255,17 @@ class TenantSettings:
     keycloak_admin_client_id: str | None = None
     keycloak_admin_client_secret: str | None = None
     keycloak_callback_uri: str | None = None
+    # Background jobs. Unset falls back to KEYCLOAK_CLIENT_*.
+    worker_keycloak_client_id: str | None = None
+    worker_keycloak_client_secret: str | None = None
+    # Capability role names. Comma-separated names are OR. Empty falls back to the default.
+    role_basic: str = "basic"
+    role_om: str = "om"
+    role_edit: str = "edit"
+    role_epa: str = "epa"
+    role_plan: str = "plan"
+    role_admin: str = "admin"
+    role_system: str = "system"
 
     @property
     def keycloak_enabled(self) -> bool:
@@ -231,6 +290,16 @@ class TenantSettings:
                 raise ValueError(f"Keycloak configuration is incomplete: {', '.join(missing)}")
         if self.auth_mode not in AUTH_MODES:
             raise ValueError(f"Invalid AUTH_MODE '{self.auth_mode}'")
+
+    def plugin_enabled(self, plugin_id: str) -> bool:
+        return plugin_id in self.enabled_plugins
+
+    def role_names(self, capability: str) -> frozenset[str]:
+        """Role names that satisfy ``capability``. Unknown ids raise KeyError."""
+        cap = _CAPABILITY_BY_ID.get(capability)
+        if cap is None:
+            raise KeyError(capability)
+        return role_name_set(getattr(self, cap.field))
 
 
 def _resolve_auth_mode(env: Mapping[str, str | None]) -> AuthMode:
@@ -279,6 +348,8 @@ def _build_global(env: Mapping[str, str | None]) -> GlobalSettings:
         admin_archive_on_delete=_to_bool(env.get("ADMIN_ARCHIVE_ON_DELETE"), True),
         single_tenant_id=_normalize_single_tenant_id(env.get("SINGLE_TENANT_ID")),
         dev_allow_tenant_header=_to_bool(env.get("DEV_ALLOW_TENANT_HEADER"), False),
+        celery_broker_url=(env.get("CELERY_BROKER_URL") or "redis://localhost:6379/0"),
+        jobs_stale_after_seconds=_to_int(env.get("JOBS_STALE_AFTER_SECONDS"), 7200),
         platform_keycloak_enabled=_to_bool(env.get("PLATFORM_KEYCLOAK_ENABLED"), False),
         platform_keycloak_url=env.get("PLATFORM_KEYCLOAK_URL") or None,
         platform_keycloak_realm=env.get("PLATFORM_KEYCLOAK_REALM") or None,
@@ -306,6 +377,7 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         api_epa=_to_bool(env.get("API_EPA"), False),
         api_features=_to_bool(env.get("API_FEATURES"), False),
         api_mcp=_to_bool(env.get("API_MCP"), False),
+        enabled_plugins=_to_plugin_list(env.get("ENABLED_PLUGINS")),
         db_host=(env.get("DB_HOST") or "localhost"),
         db_port=(env.get("DB_PORT") or "5432"),
         db_name=(env.get("DB_NAME") or "postgres"),
@@ -329,6 +401,9 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         keycloak_admin_client_id=env.get("KEYCLOAK_ADMIN_CLIENT_ID") or None,
         keycloak_admin_client_secret=env.get("KEYCLOAK_ADMIN_CLIENT_SECRET") or None,
         keycloak_callback_uri=env.get("KEYCLOAK_CALLBACK_URI") or None,
+        worker_keycloak_client_id=env.get("WORKER_KEYCLOAK_CLIENT_ID") or None,
+        worker_keycloak_client_secret=env.get("WORKER_KEYCLOAK_CLIENT_SECRET") or None,
+        **{cap.field: normalize_role_names(env.get(cap.env), default=cap.default) for cap in CAPABILITIES},
     )
 
 

@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 _basic = HTTPBasic(auto_error=False, scheme_name="tenantBasic")
 _admin_basic = HTTPBasic(auto_error=False, scheme_name="adminBasic")
 
+
+def extract_bearer_token(request: Request) -> str | None:
+    """Return the Bearer token from ``Authorization``, if present."""
+    auth = request.headers.get("authorization") or ""
+    if not auth.lower().startswith("bearer "):
+        return None
+    token = auth.split(" ", 1)[1].strip()
+    return token or None
+
+
 # JWKS cache for the platform realm (separate from tenant idps which cache their own).
 _PLATFORM_JWKS_TTL = 3600.0
 _platform_jwks_cache: dict[str, tuple[float, dict]] = {}
@@ -80,10 +90,9 @@ async def get_current_user(
     if auth_mode == "keycloak":
         if tenant.idp is None:
             raise HTTPException(status_code=500, detail="Keycloak not configured for tenant")
-        auth = request.headers.get("authorization") or ""
-        if not auth.lower().startswith("bearer "):
+        token = extract_bearer_token(request)
+        if not token:
             raise HTTPException(status_code=401, detail="Missing bearer token")
-        token = auth.split(" ", 1)[1].strip()
         return verify_token(token, tenant.idp)
 
     if auth_mode == "basic":
@@ -118,6 +127,32 @@ def require_role(*roles: str):
         if user.is_anonymous:
             return user
         if not user.has_any_role(roles):
+            raise HTTPException(status_code=403, detail="Insufficient role")
+        return user
+
+    return _check
+
+
+def require_capability(capability: str):
+    """403 when the user lacks the tenant's configured role for ``capability``.
+
+    Skipped for anonymous users (``AUTH_MODE=none``). Unknown capability ids fail closed.
+    """
+
+    async def _check(
+        request: Request,
+        user: Annotated[ApiUser, Depends(get_current_user)],
+    ) -> ApiUser:
+        if user.is_anonymous:
+            return user
+        tenant = getattr(request.state, "tenant", None)
+        if tenant is None:
+            raise HTTPException(status_code=404, detail="Tenant not specified")
+        try:
+            names = tenant.settings.role_names(capability)
+        except KeyError as exc:
+            raise HTTPException(status_code=500, detail="Unknown capability") from exc
+        if not user.has_any_role(names):
             raise HTTPException(status_code=403, detail="Insufficient role")
         return user
 
@@ -198,9 +233,8 @@ async def verify_admin(
             actor = credentials.username
 
     if actor is None:
-        auth = request.headers.get("authorization") or ""
-        if auth.lower().startswith("bearer ") and global_settings.platform_keycloak_enabled:
-            token = auth.split(" ", 1)[1].strip()
+        token = extract_bearer_token(request)
+        if token and global_settings.platform_keycloak_enabled:
             actor = await _verify_platform_token(token)
 
     if actor is None:

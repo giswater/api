@@ -13,6 +13,10 @@ services:
     image: ${GISWATER_API_IMAGE:-bgeoopengis/giswater-api}:${GISWATER_API_TAG:-latest}
     env_file:
       - .env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    depends_on:
+      - redis
     user: "0:0"
     entrypoint: ["/docker-entrypoint.sh"]
     ports:
@@ -38,6 +42,49 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+
+  celery-worker:
+    image: ${GISWATER_API_IMAGE:-bgeoopengis/giswater-api}:${GISWATER_API_TAG:-latest}
+    command: ["celery", "-A", "app.celery_app", "worker", "-Q", "giswater.jobs", "-l", "info"]
+    env_file:
+      - .env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    depends_on:
+      - redis
+    user: "0:0"
+    volumes:
+      - ./config:/app/config:ro
+      - giswater_api_logs:/app/logs
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "host.containers.internal:host-gateway"
+    restart: unless-stopped
+
+  celery-beat:
+    image: ${GISWATER_API_IMAGE:-bgeoopengis/giswater-api}:${GISWATER_API_TAG:-latest}
+    command: ["celery", "-A", "app.celery_app", "beat", "-l", "info"]
+    env_file:
+      - .env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    depends_on:
+      - redis
+    user: "0:0"
+    volumes:
+      - ./config:/app/config:ro
+      - giswater_api_logs:/app/logs
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "host.containers.internal:host-gateway"
+    restart: unless-stopped
 
 volumes:
   giswater_api_logs:

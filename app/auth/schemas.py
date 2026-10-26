@@ -63,7 +63,7 @@ class GwapiUserCreateIn(BaseModel):
     password: str = Field(min_length=8)
     db_role: str | None = Field(default=None, description="PostgreSQL role for SET ROLE; defaults to username")
     enabled: bool = True
-    roles: list[str] = Field(default_factory=lambda: ["role_basic"])
+    roles: list[str] = Field(default_factory=lambda: ["basic"])
 
 
 class GwapiUserUpdateIn(BaseModel):

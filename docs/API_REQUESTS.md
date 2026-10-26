@@ -274,7 +274,7 @@ Manage basic-auth users for a tenant (tenant must have `AUTH_MODE=basic`):
 curl -sS -u 'admin:CHANGE_ME' \
   -H "Host: bgeo360.localhost" \
   -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"s3cretPass!","db_role":"role_basic","roles":["role_basic"]}' \
+  -d '{"username":"alice","password":"s3cretPass!","db_role":"role_basic","roles":["basic"]}' \
   "http://127.0.0.1:8000/giswater/admin/tenants/test/users"
 ```
 
