@@ -10,8 +10,13 @@
   "bruteForceProtected": false,
   "roles": {
     "realm": [
-      { "name": "role_om", "description": "Operations role (dev)" },
-      { "name": "role_master", "description": "Master role (dev)" }
+      { "name": "basic", "description": "Basic capability (dev)" },
+      { "name": "om", "description": "Operations capability (dev)" },
+      { "name": "edit", "description": "Edit capability (dev)" },
+      { "name": "epa", "description": "EPA capability (dev)" },
+      { "name": "plan", "description": "Plan capability (dev)" },
+      { "name": "admin", "description": "Admin capability (dev)" },
+      { "name": "system", "description": "System capability (dev)" }
     ]
   },
   "clients": [
@@ -55,6 +60,51 @@
       ]
     },
     {
+      "clientId": "giswater-worker",
+      "name": "Giswater worker",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "giswater-worker-secret",
+      "clientAuthenticatorType": "client-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "dev",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
       "clientId": "giswater-api-admin",
       "name": "Giswater API Admin",
       "enabled": true,
@@ -86,7 +136,12 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["role_om"]
+      "realmRoles": ["basic", "om", "edit", "epa", "plan", "admin", "system"]
+    },
+    {
+      "username": "service-account-giswater-worker",
+      "enabled": true,
+      "serviceAccountClientId": "giswater-worker"
     },
     {
       "username": "service-account-giswater-api-admin",

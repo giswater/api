@@ -48,12 +48,12 @@ def test_api_user_roles():
         sub="1",
         preferred_username="alice",
         auth_method="basic",
-        roles=frozenset({"role_basic", "role_edit"}),
+        roles=frozenset({"basic", "edit"}),
         db_role="postgres",
     )
-    assert user.has_role("role_edit")
-    assert user.has_any_role(["role_om", "role_edit"])
-    assert not user.has_role("role_master")
+    assert user.has_role("edit")
+    assert user.has_any_role(["om", "edit"])
+    assert not user.has_role("system")
 
 
 def test_api_user_anonymous():

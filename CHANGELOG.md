@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Tenant settings `ROLE_BASIC`, `ROLE_OM`, `ROLE_EDIT`, `ROLE_EPA`, `ROLE_PLAN`, `ROLE_ADMIN` and `ROLE_SYSTEM` (defaults are the capability ids, admin `roles.<id>`). `require_capability` resolves the Keycloak or basic-auth role name from the matching setting. Comma-separated names are OR. Unset keeps the capability id. Checks are exact names; a higher Giswater role does not imply a lower one.
+- **Alembic revision `0003_gwapi_capability_roles`**: replaces the unused `gwapi.roles` rows from `0001` (`role_basic`, `role_edit`, `role_om`, `role_epa`, `role_master`) with `basic`, `om`, `edit`, `epa`, `plan`, `admin` and `system`.
+- Worker Keycloak client settings `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (fallback: `KEYCLOAK_CLIENT_*`). Jobs that need a service account use that `client_credentials` token.
+- `role_connection` in `app/db/execution.py`: one `SET ROLE` for a multi-statement transaction. Callers commit on success; an exception rolls the transaction back, which clears both the role and the statements. `execute_sql*` signatures are unchanged.
+- **Celery + Redis** background job transport: `app/celery_app.py`, `app/tasks/` (`execute_job`, `reconcile_stale_jobs`, worker runtime). Postgres (`gwapi.jobs`) remains the source of truth; Redis is broker-only.
+- **Alembic revision `0002_gwapi_jobs`**: creates `gwapi.jobs` (progress column, indexes) as part of the API-owned schema.
+- Job progress reporting (`app/jobs/progress.py`) and background-job Keycloak auth (`app/jobs/worker_auth.py`). Jobs use a service account (`client_credentials`), preferring `WORKER_KEYCLOAK_CLIENT_*` and falling back to `KEYCLOAK_CLIENT_*`.
+- Docker Compose services: `redis`, `celery-worker`, `celery-beat` (dev and production `deploy/docker-compose.yml`).
+- Tests: `test_jobs_execute_task`, `test_jobs_reconcile`, `test_jobs_registry`.
+
+### Changed
+
+- Job status includes `step_durations_ms` with the elapsed time of each progress step.
+- **Breaking:** run jobs with `celery -A app.celery_app worker -Q giswater.jobs` (polling worker removed earlier).
+- `ensure_tenant_database` always runs Alembic when the tenant has a DB pool (jobs need `gwapi.jobs` regardless of auth mode / logging).
+- `JobService.create_job` enqueues Celery tasks after DB insert.
+- Job HTTP DTOs live in `app/schemas/jobs.py`; domain models stay in `app/jobs/models.py`.
+
 ### Fixed
 
 - Drop session temp tables when a pooled connection is returned, so a later request does not fail on objects owned by another role (mincut and other graph functions).

@@ -78,7 +78,7 @@ Curated Model Context Protocol server mounted at `${API_ROOT}/v1/mcp/` (Streamab
 
 ### Rate limiting
 
-Applied by dependencies on selected routes (see [`app/utils/utils.py`](../app/utils/utils.py) `create_rate_limiter`).
+Applied by dependencies on selected routes (see [`app/utils/rate_limit.py`](../app/utils/rate_limit.py) `create_rate_limiter`).
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
@@ -100,6 +100,19 @@ Applied by dependencies on selected routes (see [`app/utils/utils.py`](../app/ut
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `DEV_ALLOW_TENANT_HEADER` | `false` | When `true`, non-apex hosts may send `X-Tenant-ID` to pick a tenant without DNS-based host matching. **Local/dev only**: never enable in production — use `SINGLE_TENANT_ID` for IP-only single-tenant deployments or DNS routing for multi-tenant. Ignored when `SINGLE_TENANT_ID` is set. |
+
+### Jobs and Celery
+
+Background jobs are stored in `gwapi.jobs` (per tenant database). The API enqueues work via Celery; separate `celery-worker` and `celery-beat` services execute and reconcile jobs.
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Redis URL for the Celery broker (transport only; job state lives in Postgres). |
+| `JOBS_STALE_AFTER_SECONDS` | `7200` | Jobs stuck in `running` longer than this are failed by Celery Beat reconciliation. |
+
+Job types with `requires_auth` mint a `client_credentials` token from `WORKER_KEYCLOAK_CLIENT_ID` / `WORKER_KEYCLOAK_CLIENT_SECRET` (falling back to `KEYCLOAK_CLIENT_*`). That client (`giswater-worker`) is service-account only. In-request calls keep the caller's Bearer.
+
+`GET /jobs/{job_id}` returns `poll_interval_ms` (and optional `Retry-After` header) so clients know how long to wait between status polls.
 
 ### Platform Keycloak (admin Bearer auth)
 
@@ -154,10 +167,18 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_ROUTING` | `false` | External routing (Valhalla) integration. |
 | `API_CRM` | `false` | CRM / hydrometer-style endpoints. |
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
-| `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, `/features/arcs`, …; list, GeoJSON, by-id fields/form/geojson). Needs Giswater DB ≥ 4.17.0. |
+| `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
 | `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
 | `API_CMMS` | `false` | CMMS visits and attachments (`/cmms`). Writes go to the singleton `cmms` schema; the DB user needs membership in `role_cmms`. |
 | `CMMS_MAX_UPLOAD_MB` | `100` | Max size of one CMMS upload, in MB. Checked while the file is written; over the limit returns 413 and leaves nothing on disk. The reverse proxy body limit must be at least this large (`client_max_body_size` in nginx). |
+| `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
+| `ROLE_BASIC` | `basic` | Keycloak realm/client role, or `gwapi` basic-auth role, that satisfies capability `basic` when auth is not `none`. Comma-separated names are OR. Empty falls back to `basic`. Admin API: `roles.basic`. |
+| `ROLE_OM` | `om` | Same contract as `ROLE_BASIC`, for capability `om`. Admin API: `roles.om`. |
+| `ROLE_EDIT` | `edit` | Same contract as `ROLE_BASIC`, for capability `edit`. Admin API: `roles.edit`. |
+| `ROLE_EPA` | `epa` | Same contract as `ROLE_BASIC`, for capability `epa`. Admin API: `roles.epa`. |
+| `ROLE_PLAN` | `plan` | Same contract as `ROLE_BASIC`, for capability `plan`. Admin API: `roles.plan`. |
+| `ROLE_ADMIN` | `admin` | Same contract as `ROLE_BASIC`, for capability `admin`. Admin API: `roles.admin`. |
+| `ROLE_SYSTEM` | `system` | Same contract as `ROLE_BASIC`, for capability `system`. Admin API: `roles.system`. |
 
 ### Database
 
@@ -204,6 +225,8 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 | `KEYCLOAK_ADMIN_CLIENT_ID` | _(required if enabled)_ | Admin client (service account / mgmt). |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | _(required if enabled)_ | Admin client secret. |
 | `KEYCLOAK_CALLBACK_URI` | _(required if enabled)_ | Callback URI registered in Keycloak for this client setup. |
+| `WORKER_KEYCLOAK_CLIENT_ID` | `KEYCLOAK_CLIENT_ID` | Confidential client used by background jobs (`giswater-worker`). Service accounts only. |
+| `WORKER_KEYCLOAK_CLIENT_SECRET` | `KEYCLOAK_CLIENT_SECRET` | Secret for `WORKER_KEYCLOAK_CLIENT_ID`. |
 
 **Keycloak client checklist** (for the client named in `KEYCLOAK_CLIENT_ID`, required for Swagger OAuth and the token proxy):
 
@@ -213,6 +236,7 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 4. An **Audience** protocol mapper with *Included Client Audience* = the same client (`KEYCLOAK_CLIENT_ID`) and *Add to access token* ON. Without it, `verify_token` rejects every token with `401 Invalid token` because Keycloak does not add the client to `aud` automatically.
 5. LDAP users authenticate through the realm's LDAP federation provider. The Direct Grant Flow must not force OTP, and the user must have no pending required actions (otherwise use the authorization-code flow).
 6. The API issues `SET ROLE <preferred_username>` on DB calls; each user needs a matching PostgreSQL role.
+7. *Service accounts* OFF on this client. Jobs use `WORKER_KEYCLOAK_CLIENT_ID` (`giswater-worker`), not this client.
 
 **Local IdP:** `docker compose --profile keycloak up -d keycloak` starts a preconfigured Keycloak on `http://auth.localhost:8080` (realm/client/user ready for Swagger). See [docker/keycloak/README.md](../docker/keycloak/README.md).
 

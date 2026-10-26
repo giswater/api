@@ -6,6 +6,6 @@ or (at your option) any later version.
 """
 
 from .schemas import ApiUser
-from .session import get_current_user, require_role, verify_admin
+from .session import get_current_user, require_capability, require_role, verify_admin
 
-__all__ = ["ApiUser", "get_current_user", "require_role", "verify_admin"]
+__all__ = ["ApiUser", "get_current_user", "require_capability", "require_role", "verify_admin"]
