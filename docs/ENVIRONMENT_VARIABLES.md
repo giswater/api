@@ -169,7 +169,7 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
 | `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
 | `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
-| `API_CMMS` | `false` | CMMS visits and attachments (`/cmms`). Writes go to the singleton `cmms` schema; the DB user needs membership in `role_cmms`. |
+| `API_CMMS` | `false` | CMMS visits and attachments (`/cmms`). Reads return only rows in the schema views `v_cmms_visit` and `v_cmms_attachment` (404 if CMMS is not integrated on that schema). Writes go to the singleton `cmms` schema; the DB user needs membership in `role_cmms`. |
 | `CMMS_MAX_UPLOAD_MB` | `100` | Max size of one CMMS upload, in MB. Checked while the file is written; over the limit returns 413 and leaves nothing on disk. The reverse proxy body limit must be at least this large (`client_max_body_size` in nginx). |
 | `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
 | `ROLE_BASIC` | `basic` | Keycloak realm/client role, or `gwapi` basic-auth role, that satisfies capability `basic` when auth is not `none`. Comma-separated names are OR. Empty falls back to `basic`. Admin API: `roles.basic`. |

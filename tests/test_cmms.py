@@ -5,6 +5,7 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
+import asyncio
 import io
 import os
 from pathlib import Path
@@ -13,8 +14,11 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 from PIL.TiffImagePlugin import IFDRational
+from psycopg import sql
+from psycopg.errors import UndefinedTable
 
 from app.services import cmms_media
+from app.tenancy import state
 from tests.helpers import api, assert_ready
 
 
@@ -114,12 +118,76 @@ def test_process_corrupt_image_keeps_file(tmp_path):
 
 
 @pytest.fixture
-def cmms_ready(client, default_params):
+def cmms_ready(client, default_params) -> bool:
+    """True when the schema views exist. False when CMMS is not integrated. Skips if `cmms` is missing."""
     assert_ready(client)
     resp = client.get(api("/cmms/visits"), params={**default_params, "limit": 1})
     if resp.status_code == 500 and "cmms" in resp.text.lower():
         pytest.skip("cmms schema is not installed")
+    if resp.status_code == 404 and "not integrated" in resp.text.lower():
+        if not _cmms_schema_installed():
+            pytest.skip("cmms schema is not installed")
+        return False
     assert resp.status_code == 200, resp.text
+    return True
+
+
+def _tenant():
+    assert state.registry is not None, "Tenant registry not initialized"
+    tenant = state.registry.get("test")
+    assert tenant is not None, "Tenant 'test' not loaded"
+    return tenant
+
+
+def _cmms_schema_installed() -> bool:
+    async def _run() -> bool:
+        async with _tenant().db_manager.get_db() as conn:
+            assert conn is not None, "Postgres not available"
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name = 'cmms'")
+                row = await cur.fetchone()
+            await conn.rollback()
+        return row is not None
+
+    return asyncio.run(_run())
+
+
+def _sample_sys_code(schema: str) -> str | None:
+    async def _run() -> str | None:
+        async with _tenant().db_manager.get_db() as conn:
+            assert conn is not None, "Postgres not available"
+            row = None
+            try:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        sql.SQL(
+                            "SELECT sys_code FROM {}.node WHERE sys_code IS NOT NULL AND btrim(sys_code) <> '' LIMIT 1"
+                        ).format(sql.Identifier(schema))
+                    )
+                    row = await cur.fetchone()
+            except UndefinedTable:
+                row = None
+            await conn.rollback()
+        return row[0] if row else None
+
+    return asyncio.run(_run())
+
+
+def _hidden_read(resp, *, integrated: bool) -> None:
+    assert resp.status_code == 404, resp.text
+    if integrated:
+        assert "not integrated" not in resp.text.lower()
+    else:
+        assert "not integrated" in resp.text.lower()
+
+
+def _hidden_list(resp, *, integrated: bool, row_id: str, key: str) -> None:
+    if not integrated:
+        assert resp.status_code == 404, resp.text
+        assert "not integrated" in resp.text.lower()
+        return
+    rows = _data(resp)[key]
+    assert all(row["id"] != row_id for row in rows)
 
 
 def _data(resp) -> dict:
@@ -157,6 +225,7 @@ def test_upload_over_limit_is_413(client, default_params):
 
 
 def test_visit_and_attachment_crud(client, default_params, cmms_ready):
+    integrated = cmms_ready
     code = f"cmms-{uuid4().hex[:8]}"
     visit_payload = {
         "type": "inspection",
@@ -183,18 +252,18 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
     assert attachment["visit_ids"] == [visit_id]
     assert attachment["thumbnail_path"]
 
-    listed = _data(client.get(api("/cmms/visits"), params={**default_params, "sysCode": code}))
-    assert any(row["id"] == visit_id for row in listed["visits"])
+    listed = client.get(api("/cmms/visits"), params={**default_params, "sysCode": code})
+    _hidden_list(listed, integrated=integrated, row_id=visit_id, key="visits")
+    got = client.get(api(f"/cmms/visits/{visit_id}"), params=default_params)
+    _hidden_read(got, integrated=integrated)
 
     file_resp = client.get(api(f"/cmms/attachments/{attachment_id}/file"), params=default_params)
-    assert file_resp.status_code == 200, file_resp.text
-    assert file_resp.content == _png()
+    _hidden_read(file_resp, integrated=integrated)
     thumb = client.get(
         api(f"/cmms/visits/{visit_id}/attachments/{attachment_id}/file"),
         params={**default_params, "thumbnail": "true"},
     )
-    assert thumb.status_code == 200, thumb.text
-    assert thumb.content[:2] == b"\xff\xd8"
+    _hidden_read(thumb, integrated=integrated)
 
     extra = _data(
         client.post(
@@ -205,8 +274,9 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
     )
     assert extra["attachments"][0]["visit_ids"] == [visit_id]
     assert not extra["attachments"][0].get("thumbnail_path")
-    listed_files = _data(client.get(api(f"/cmms/visits/{visit_id}/attachments"), params=default_params))
-    assert {row["id"] for row in listed_files["attachments"]} == {attachment_id, extra["attachments"][0]["id"]}
+    listed_files = client.get(api(f"/cmms/visits/{visit_id}/attachments"), params=default_params)
+    _hidden_list(listed_files, integrated=integrated, row_id=attachment_id, key="attachments")
+    _hidden_list(listed_files, integrated=integrated, row_id=extra["attachments"][0]["id"], key="attachments")
 
     other = f"cmms-{uuid4().hex[:8]}"
     patched = _data(
@@ -223,7 +293,7 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
     assert deleted["visits"][0]["id"] == visit_id
     assert deleted["visits"][0]["sys_codes"] == [other]
     still = client.get(api(f"/cmms/attachments/{attachment_id}"), params=default_params)
-    assert still.status_code == 200, still.text
+    _hidden_read(still, integrated=integrated)
 
     direct_code = f"cmms-{uuid4().hex[:8]}"
     pdf = _data(
@@ -255,6 +325,29 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
 
     for item in [pdf["attachments"][0], text["attachments"][0], extra["attachments"][0]]:
         client.delete(api(f"/cmms/attachments/{item['id']}"), params=default_params)
+
+    if not integrated:
+        return
+    feature_code = _sample_sys_code(default_params["schema"])
+    if not feature_code:
+        return
+    member = _data(
+        client.post(
+            api("/cmms/visits"),
+            params=default_params,
+            json={
+                "type": "inspection",
+                "status": "open",
+                "sysCodes": [feature_code],
+            },
+        )
+    )
+    member_id = member["visits"][0]["id"]
+    try:
+        found = _data(client.get(api("/cmms/visits"), params={**default_params, "sysCode": feature_code}))
+        assert any(row["id"] == member_id for row in found["visits"])
+    finally:
+        client.delete(api(f"/cmms/visits/{member_id}"), params=default_params)
 
 
 def test_large_jpeg_keeps_exif_coordinates(client, default_params, cmms_ready):
