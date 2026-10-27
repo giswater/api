@@ -21,8 +21,12 @@ from app.services import cmms_media
 from app.services.context import ServiceContext
 from app.services.helpers import accepted_data_response
 
-# cmms is one schema per database, not the tenant project schema.
+# Writes go to the singleton cmms schema. Reads are limited to rows in
+# {schema}.v_cmms_visit and {schema}.v_cmms_attachment.
 _CHUNK = 1024 * 1024
+_CMMS_VIEWS = ("v_cmms_visit", "v_cmms_attachment")
+_VISIT_SCOPE = "v.id IN (SELECT id FROM {schema}.v_cmms_visit)"
+_ATTACHMENT_SCOPE = "a.id IN (SELECT id FROM {schema}.v_cmms_attachment)"
 
 _VISIT_COLUMNS = {
     "extVisitId": ("ext_visit_id", ""),
@@ -150,8 +154,20 @@ class CmmsService:
         self.storage_dir = Path(storage_dir)
         self.max_upload_bytes = max_upload_bytes
 
+    async def _require_cmms_views(self) -> None:
+        rows = await self._sql(
+            "SELECT c.relname AS name FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relkind = 'v' AND c.relname = ANY(%s)",
+            (self.ctx.schema, list(_CMMS_VIEWS)),
+        )
+        present = {row["name"] for row in rows if row.get("name")}
+        if not set(_CMMS_VIEWS).issubset(present):
+            schema = self.ctx.schema
+            raise HTTPException(status_code=404, detail=f"CMMS is not integrated for schema '{schema}'")
+
     async def _sql(self, query: str, parameters: tuple | None = None) -> list[dict]:
-        # schema= validates the tenant project schema. cmms itself is hardcoded.
+        # schema= validates the tenant project schema and fills {schema}.
         return await execute_sql(
             self.ctx.logger,
             self.ctx.db_manager,
@@ -244,7 +260,8 @@ class CmmsService:
         status: str | None = None,
         limit: int = 100,
     ) -> dict:
-        clauses = ["TRUE"]
+        await self._require_cmms_views()
+        clauses = [_VISIT_SCOPE]
         params: list = []
         if sys_code:
             clauses.append("v.id IN (SELECT visit_id FROM cmms.visit_x_feature WHERE sys_code = %s)")
@@ -266,8 +283,10 @@ class CmmsService:
         visits, total = _split_total(await self._sql(query, tuple(params)), "visit")
         return await accepted_data_response(self.ctx, "Fetched visits successfully", {"visits": visits, "count": total})
 
-    async def get_visit(self, visit_id: UUID) -> dict:
-        visit = await self._require_visit(visit_id)
+    async def get_visit(self, visit_id: UUID, *, scoped: bool = False) -> dict:
+        if scoped:
+            await self._require_cmms_views()
+        visit = await self._require_visit(visit_id, scoped=scoped)
         return await accepted_data_response(self.ctx, "Fetched visit successfully", {"visits": [visit]})
 
     async def update_visit(self, visit_id: UUID, visit: VisitUpdate) -> dict:
@@ -315,7 +334,8 @@ class CmmsService:
         visit_id: UUID | None = None,
         limit: int = 100,
     ) -> dict:
-        clauses = ["TRUE"]
+        await self._require_cmms_views()
+        clauses = [_ATTACHMENT_SCOPE]
         params: list = []
         if sys_code:
             clauses.append(
@@ -344,8 +364,10 @@ class CmmsService:
             self.ctx, "Fetched attachments successfully", {"attachments": items, "count": total}
         )
 
-    async def get_attachment(self, attachment_id: UUID) -> dict:
-        attachment = await self._require_attachment(attachment_id)
+    async def get_attachment(self, attachment_id: UUID, *, scoped: bool = False) -> dict:
+        if scoped:
+            await self._require_cmms_views()
+        attachment = await self._require_attachment(attachment_id, scoped=scoped)
         return await accepted_data_response(self.ctx, "Fetched attachment successfully", {"attachments": [attachment]})
 
     async def add_attachment(self, upload: AttachmentUpload, *, visit_id: UUID | None = None) -> dict:
@@ -397,11 +419,13 @@ class CmmsService:
         return await accepted_data_response(self.ctx, "Deleted attachment successfully", {"attachments": [attachment]})
 
     async def get_file(self, attachment_id: UUID, *, visit_id: UUID | None = None, thumbnail: bool = False):
+        await self._require_cmms_views()
         rows = await self._sql(
-            """
+            f"""
             SELECT path, thumbnail_path, content_type, name
             FROM cmms.attachment a
             WHERE a.id = %s::uuid
+              AND {_ATTACHMENT_SCOPE}
               AND (
                 %s::uuid IS NULL
                 OR EXISTS (
@@ -441,17 +465,20 @@ class CmmsService:
             raise HTTPException(status_code=404, detail=f"{label} '{row_id}' not found")
         return rows[0]["item"]
 
-    async def _require_visit(self, visit_id: UUID) -> dict:
+    async def _require_visit(self, visit_id: UUID, *, scoped: bool = False) -> dict:
+        scope = f" AND {_VISIT_SCOPE}" if scoped else ""
         rows = await self._sql(
-            f"SELECT {_VISIT_JSON} AS visit FROM cmms.visit v WHERE v.id = %s::uuid", (str(visit_id),)
+            f"SELECT {_VISIT_JSON} AS visit FROM cmms.visit v WHERE v.id = %s::uuid{scope}",
+            (str(visit_id),),
         )
         if not rows:
             raise HTTPException(status_code=404, detail=f"Visit '{visit_id}' not found")
         return rows[0]["visit"]
 
-    async def _require_attachment(self, attachment_id: UUID) -> dict:
+    async def _require_attachment(self, attachment_id: UUID, *, scoped: bool = False) -> dict:
+        scope = f" AND {_ATTACHMENT_SCOPE}" if scoped else ""
         rows = await self._sql(
-            f"SELECT {_ATTACHMENT_JSON} AS attachment FROM cmms.attachment a WHERE a.id = %s::uuid",
+            f"SELECT {_ATTACHMENT_JSON} AS attachment FROM cmms.attachment a WHERE a.id = %s::uuid{scope}",
             (str(attachment_id),),
         )
         if not rows:

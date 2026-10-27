@@ -46,7 +46,7 @@ async def list_visits(
 
 @router.get("/visits/{visit_id}", response_model=CmmsResponse, response_model_exclude_unset=True)
 async def get_visit(commons: CommonsDep, visit_id: UUID):
-    return await _service(commons).get_visit(visit_id)
+    return await _service(commons).get_visit(visit_id, scoped=True)
 
 
 @router.post("/visits", response_model=CmmsResponse, response_model_exclude_unset=True)
@@ -114,7 +114,7 @@ async def upload_attachment(commons: CommonsDep, upload: Annotated[AttachmentUpl
 
 @router.get("/attachments/{attachment_id}", response_model=CmmsResponse, response_model_exclude_unset=True)
 async def get_attachment(commons: CommonsDep, attachment_id: UUID):
-    return await _service(commons).get_attachment(attachment_id)
+    return await _service(commons).get_attachment(attachment_id, scoped=True)
 
 
 @router.get("/attachments/{attachment_id}/file")
