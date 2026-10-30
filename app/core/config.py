@@ -163,7 +163,8 @@ class GlobalSettings:
     mcp_enabled: bool = True
     mcp_timeout: float = 60.0
 
-    # CMMS attachment files (per tenant subdirectory). Relative paths are stored in cmms.attachment.
+    # CMMS attachment files (per tenant subdirectory). cmms.attachment stores a key
+    # relative to this directory, or a public URL when the tenant sets CMMS_PUBLIC_URL.
     cmms_storage_dir: str = "data/cmms"
 
     # Legacy aliases (kept for the duration of the multi-tenant migration).
@@ -230,6 +231,8 @@ class TenantSettings:
     api_mcp: bool = False
     api_cmms: bool = False
     cmms_max_upload_mb: int = 100
+    # Public base for new attachment path/thumbnail_path values. Empty stores a relative key.
+    cmms_public_url: str | None = None
     enabled_plugins: frozenset[str] = frozenset()
 
     # Database
@@ -385,6 +388,7 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         api_mcp=_to_bool(env.get("API_MCP"), False),
         api_cmms=_to_bool(env.get("API_CMMS"), False),
         cmms_max_upload_mb=_to_int(env.get("CMMS_MAX_UPLOAD_MB"), 100),
+        cmms_public_url=(env.get("CMMS_PUBLIC_URL") or "").strip().rstrip("/") or None,
         enabled_plugins=_to_plugin_list(env.get("ENABLED_PLUGINS")),
         db_host=(env.get("DB_HOST") or "localhost"),
         db_port=(env.get("DB_PORT") or "5432"),

@@ -41,6 +41,15 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Public CMMS files (hybrid). CMMS_PUBLIC_URL must be https://<host>/giswater/files
+    # (no trailing slash). Host nginx cannot read the named volume giswater_api_cmms;
+    # bind-mount the storage dir (see deploy/docker-compose.yml) and point alias at it.
+    # autoindex off is required: the UUID in the path is the only access control.
+    # location /giswater/files/ {
+    #     alias /srv/giswater/cmms/;
+    #     autoindex off;
+    # }
+
     # Example: another app on the same tenant host
     # location /other-app/ {
     #     proxy_pass http://127.0.0.1:9000;

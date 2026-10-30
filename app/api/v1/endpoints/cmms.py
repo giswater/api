@@ -10,7 +10,7 @@ from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, File, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.api.deps import CommonsDep, get_service_context
 from app.core.config import global_settings
@@ -25,11 +25,14 @@ def _service(commons: dict) -> CmmsService:
         get_service_context(commons),
         storage_dir=Path(global_settings.cmms_storage_dir),
         max_upload_bytes=commons["tenant"].settings.cmms_max_upload_mb * 1024 * 1024,
+        public_url=commons["tenant"].settings.cmms_public_url,
     )
 
 
-def _file(stored) -> FileResponse:
+def _file(stored) -> FileResponse | RedirectResponse:
     path, media_type, filename = stored
+    if isinstance(path, str):
+        return RedirectResponse(path, status_code=307)
     return FileResponse(path, media_type=media_type, filename=filename)
 
 

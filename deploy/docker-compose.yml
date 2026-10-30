@@ -24,6 +24,8 @@ services:
     volumes:
       - ./config:/app/config:ro
       - giswater_api_logs:/app/logs
+      # Named volume: host nginx cannot serve these files. For CMMS_PUBLIC_URL,
+      # bind-mount instead, e.g. /srv/giswater/cmms:/app/data/cmms
       - giswater_api_cmms:/app/data/cmms
       - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
     extra_hosts:

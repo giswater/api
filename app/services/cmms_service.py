@@ -8,8 +8,10 @@ or (at your option) any later version.
 from __future__ import annotations
 
 import json
+import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from urllib.parse import quote, unquote, urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, UploadFile
@@ -149,10 +151,18 @@ def _split_total(rows: list[dict], key: str) -> tuple[list, int]:
 
 
 class CmmsService:
-    def __init__(self, ctx: ServiceContext, *, storage_dir: Path, max_upload_bytes: int):
+    def __init__(
+        self,
+        ctx: ServiceContext,
+        *,
+        storage_dir: Path,
+        max_upload_bytes: int,
+        public_url: str | None = None,
+    ):
         self.ctx = ctx.with_logger(__name__)
         self.storage_dir = Path(storage_dir)
         self.max_upload_bytes = max_upload_bytes
+        self.public_url = (public_url or "").strip().rstrip("/") or None
 
     async def _require_cmms_views(self) -> None:
         rows = await self._sql(
@@ -189,14 +199,21 @@ class CmmsService:
         full = path.resolve()
         if not full.is_relative_to(root):
             raise HTTPException(status_code=500, detail="Stored file escaped the CMMS storage directory")
-        return full.relative_to(root).as_posix()
+        key = full.relative_to(root).as_posix()
+        if not self.public_url:
+            return key
+        return f"{self.public_url}/{quote(key)}"
 
-    def _resolve_stored(self, relative: str) -> Path:
-        root = self.storage_dir.resolve()
-        full = (root / relative).resolve()
-        if not full.is_relative_to(root) or not full.is_file():
-            raise HTTPException(status_code=404, detail="File not found")
-        return full
+    def _resolve_stored(self, attachment_id: str, stored: str) -> Path | str:
+        """Local file for this attachment, or an external http(s) URL when nothing is on disk."""
+        name = unquote(PurePosixPath(urlsplit(stored).path).name)
+        root = (self.storage_dir / self.ctx.tenant_id / attachment_id).resolve()
+        full = (root / name).resolve()
+        if name not in ("", ".", "..") and full.is_relative_to(root) and full.is_file():
+            return full
+        if urlsplit(stored).scheme in ("http", "https"):
+            return stored
+        raise HTTPException(status_code=404, detail="File not found")
 
     async def _store_one(self, upload: AttachmentUpload) -> dict:
         attachment_id = str(uuid4())
@@ -442,8 +459,8 @@ class CmmsService:
         if thumbnail:
             if not row.get("thumbnail_path"):
                 raise HTTPException(status_code=404, detail="No thumbnail")
-            return self._resolve_stored(row["thumbnail_path"]), "image/jpeg", "thumb.jpg"
-        return self._resolve_stored(row["path"]), row.get("content_type"), row.get("name")
+            return self._resolve_stored(str(attachment_id), row["thumbnail_path"]), "image/jpeg", "thumb.jpg"
+        return self._resolve_stored(str(attachment_id), row["path"]), row.get("content_type"), row.get("name")
 
     async def _delete_row(self, table: str, row_json: str, alias: str, row_id: UUID, label: str) -> dict:
         # Snapshot first: a RETURNING subquery would miss links removed by ON DELETE CASCADE.
@@ -520,7 +537,7 @@ class CmmsService:
 
 
 def _safe_name(filename: str | None) -> str:
-    name = Path(filename or "file").name
+    name = re.sub(r"[^\w.-]", "_", Path(filename or "file").name)
     if name in ("", ".", ".."):
         return "file"
     return name

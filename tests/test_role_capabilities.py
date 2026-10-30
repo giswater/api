@@ -1,5 +1,6 @@
 """Capability role names and require_capability."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 from fastapi import Depends, FastAPI
@@ -129,6 +130,11 @@ def test_admin_round_trip_roles():
     assert "ROLE_EPA=epa-role" in body
     assert "ROLE_PLAN=planning" in body
     assert "ROLE_SYSTEM=system" in body
+
+    with_url = replace(created, cmms_public_url="https://files.example/giswater/files")
+    kept_url = build_tenant_settings_from_input(TenantIn(db=DbSettingsIn(password="secret")), existing=with_url)
+    assert kept_url.cmms_public_url == "https://files.example/giswater/files"
+    assert "CMMS_PUBLIC_URL=https://files.example/giswater/files" in serialize_tenant_settings(with_url)
 
     tenant = SimpleNamespace(id="acme", settings=created, db_manager=SimpleNamespace(connection_pool=None))
     assert TenantOut.from_tenant(tenant).roles == {  # type: ignore[arg-type]

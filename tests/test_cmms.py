@@ -8,6 +8,7 @@ or (at your option) any later version.
 import asyncio
 import io
 import os
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,7 +18,12 @@ from PIL.TiffImagePlugin import IFDRational
 from psycopg import sql
 from psycopg.errors import UndefinedTable
 
+from app.api.v1.endpoints.cmms import _file
+from app.core.config import TenantSettings
+from app.db.manager import DatabaseManager
 from app.services import cmms_media
+from app.services.cmms_service import CmmsService
+from app.services.context import ServiceContext
 from app.tenancy import state
 from tests.helpers import api, assert_ready
 
@@ -66,7 +72,7 @@ def test_process_small_png_keeps_original_and_writes_thumb(tmp_path):
     result = cmms_media.process_upload(path, "image/png")
     assert result["path"] == path
     assert result["content_type"] == "image/png"
-    assert result["thumbnail_path"] == tmp_path / "thumb.jpg"
+    assert result["thumbnail_path"] == tmp_path / "photo.png_thumb.jpg"
     assert result["thumbnail_path"].read_bytes()[:2] == b"\xff\xd8"
     assert "originalSize" not in result["metadata"]
 
@@ -93,7 +99,7 @@ def test_process_pdf_has_thumbnail_and_text_does_not(tmp_path):
     pdf.write_bytes(_pdf())
     pdf_result = cmms_media.process_upload(pdf, "application/pdf")
     assert pdf_result["path"] == pdf
-    assert pdf_result["thumbnail_path"] == tmp_path / "thumb.jpg"
+    assert pdf_result["thumbnail_path"] == tmp_path / "note.pdf_thumb.jpg"
     assert pdf_result["thumbnail_path"].read_bytes()[:2] == b"\xff\xd8"
 
     text = tmp_path / "note.txt"
@@ -378,3 +384,124 @@ def test_large_jpeg_keeps_exif_coordinates(client, default_params, cmms_ready):
     assert moved["coordinates"]["alt"] == pytest.approx(3)
     client.delete(api(f"/cmms/attachments/{item['id']}"), params=default_params)
     client.delete(api(f"/cmms/attachments/{moved['id']}"), params=default_params)
+
+
+def _set_attachment_path(attachment_id: str, path: str) -> None:
+    async def _run() -> None:
+        async with _tenant().db_manager.get_db() as conn:
+            assert conn is not None, "Postgres not available"
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE cmms.attachment SET path = %s WHERE id = %s::uuid",
+                    (path, attachment_id),
+                )
+            await conn.commit()
+
+    asyncio.run(_run())
+
+
+def test_cmms_public_url_strips_trailing_slash():
+    from app.core.config import _build_tenant
+
+    settings = _build_tenant({"CMMS_PUBLIC_URL": "https://files.example/giswater/files/"})
+    assert settings.cmms_public_url == "https://files.example/giswater/files"
+    assert _build_tenant({"CMMS_PUBLIC_URL": "  "}).cmms_public_url is None
+
+
+def test_stored_path_is_public_url_or_key_and_file_resolves_by_name(tmp_path):
+    ctx = ServiceContext(
+        tenant_id="test",
+        db_manager=DatabaseManager(TenantSettings(), "test"),
+        schema="ws_40",
+        user_id=None,
+        db_role=None,
+    )
+    stored = tmp_path / "test" / "att" / "my_photo.png"
+    stored.parent.mkdir(parents=True)
+    stored.write_bytes(b"png")
+    (stored.parent / "my_photo.png_thumb.jpg").write_bytes(b"\xff\xd8")
+
+    public = CmmsService(
+        ctx,
+        storage_dir=tmp_path,
+        max_upload_bytes=1,
+        public_url="https://files.example/giswater/files/",
+    )
+    url = "https://files.example/giswater/files/test/att/my_photo.png"
+    assert public._relative(stored) == url
+    assert public._relative(stored.parent / "my_photo.png_thumb.jpg").endswith("/my_photo.png_thumb.jpg")
+    assert public._resolve_stored("att", url) == stored.resolve()
+
+    plain = CmmsService(ctx, storage_dir=tmp_path, max_upload_bytes=1)
+    assert plain._relative(stored) == "test/att/my_photo.png"
+    assert plain._resolve_stored("att", "test/att/my_photo.png") == stored.resolve()
+    assert plain._resolve_stored("att", "https://example.com/x.jpg") == "https://example.com/x.jpg"
+
+    redirected = _file(("https://example.com/x.jpg", "image/jpeg", "x.jpg"))
+    assert redirected.status_code == 307
+    assert redirected.headers["location"] == "https://example.com/x.jpg"
+
+
+def test_public_url_is_stored_and_external_path_redirects(client, default_params, cmms_ready):
+    if not cmms_ready:
+        pytest.skip("CMMS is not integrated")
+    code = _sample_sys_code(default_params["schema"])
+    if not code:
+        pytest.skip("no feature sys_code to publish the attachment through the CMMS view")
+
+    tenant = _tenant()
+    previous = tenant.settings
+    base = "https://files.example/giswater/files"
+    tenant.settings = replace(previous, cmms_public_url=base)
+    visit_id = None
+    attachment_id = None
+    try:
+        visit = _data(
+            client.post(
+                api("/cmms/visits"),
+                params=default_params,
+                json={"type": "inspection", "status": "open", "sysCodes": [code]},
+            )
+        )
+        visit_id = visit["visits"][0]["id"]
+        blob = _png()
+        uploaded = _data(
+            client.post(
+                api(f"/cmms/visits/{visit_id}/attachments"),
+                params=default_params,
+                data={"sysCodes": [code]},
+                files={"file": ("my photo.png", blob, "image/png")},
+            )
+        )
+        item = uploaded["attachments"][0]
+        attachment_id = item["id"]
+        assert item["path"].startswith(f"{base}/test/")
+        assert item["path"].endswith("/my_photo.png")
+        assert item["thumbnail_path"].startswith(f"{base}/test/")
+        assert item["thumbnail_path"].endswith("/my_photo.png_thumb.jpg")
+
+        file_resp = client.get(api(f"/cmms/attachments/{attachment_id}/file"), params=default_params)
+        assert file_resp.status_code == 200, file_resp.text
+        assert file_resp.content == blob
+        thumb = client.get(
+            api(f"/cmms/attachments/{attachment_id}/file"),
+            params={**default_params, "thumbnail": "true"},
+        )
+        assert thumb.status_code == 200, thumb.text
+        assert thumb.content[:2] == b"\xff\xd8"
+
+        external = "https://example.com/x.jpg"
+        _set_attachment_path(attachment_id, external)
+        redirected = client.get(
+            api(f"/cmms/attachments/{attachment_id}/file"),
+            params=default_params,
+            follow_redirects=False,
+        )
+        assert redirected.status_code == 307, redirected.text
+        assert redirected.headers["location"] == external
+    finally:
+        tenant.settings = previous
+        if attachment_id:
+            client.delete(api(f"/cmms/attachments/{attachment_id}"), params=default_params)
+        if visit_id:
+            client.delete(api(f"/cmms/visits/{visit_id}"), params=default_params)

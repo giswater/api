@@ -279,6 +279,7 @@ def build_tenant_settings_from_input(
         api_mcp=_api("mcp"),
         api_cmms=_api("cmms"),
         cmms_max_upload_mb=existing.cmms_max_upload_mb if existing else 100,
+        cmms_public_url=existing.cmms_public_url if existing else None,
         enabled_plugins=_plugins(),
         **{
             cap.field: _role_value(
