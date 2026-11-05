@@ -36,8 +36,9 @@ Pipfile.lock
 .idea/
 
 # Plugins
-/plugins/
+/plugins/*
 !plugins/readme.md
+!plugins/__init__.py
 
 # Celery Beat local schedule DB
 celerybeat-schedule
