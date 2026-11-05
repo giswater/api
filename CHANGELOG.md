@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-05
+
 ### Added
 
 - **`/cmms` visits and attachments** (list, get, create, update, delete, file download), gated by `API_CMMS`. Writes go to the singleton `cmms` schema; the DB user needs `role_cmms`. Uploads are stored under `FILES_DIR` (default `data/files`, Docker volume `giswater_api_files`) at `{dir}/{tenant_id}/cmms/{attachment_id}/`, capped by `FILES_MAX_UPLOAD_MB` (default 100, 413 over the limit). `FILES_PUBLIC_URL` is the optional public base for stored paths. Admin tenant JSON exposes the three settings as `files`. Images and PDFs get a thumbnail; large images and HEIC/HEIF are resized (Pillow, pillow-heif, pypdfium2).
@@ -415,7 +417,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.8.1...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.9.0...main
+[1.9.0]: https://github.com/Giswater/giswater-api/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/Giswater/giswater-api/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/Giswater/giswater-api/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Giswater/giswater-api/compare/v1.6.2...v1.7.0
