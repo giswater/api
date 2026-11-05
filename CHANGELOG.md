@@ -21,14 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker Compose services: `redis`, `celery-worker`, `celery-beat` (dev and production `deploy/docker-compose.yml`).
 - Tests: `test_jobs_execute_task`, `test_jobs_reconcile`, `test_jobs_registry`.
 
-### Changed
-
-- Job status includes `step_durations_ms` with the elapsed time of each progress step.
-- **Breaking:** run jobs with `celery -A app.celery_app worker -Q giswater.jobs` (polling worker removed earlier).
-- `ensure_tenant_database` always runs Alembic when the tenant has a DB pool (jobs need `gwapi.jobs` regardless of auth mode / logging).
-- `JobService.create_job` enqueues Celery tasks after DB insert.
-- Job HTTP DTOs live in `app/schemas/jobs.py`; domain models stay in `app/jobs/models.py`.
-
 ### Fixed
 
 - Drop session temp tables when a pooled connection is returned, so a later request does not fail on objects owned by another role (mincut and other graph functions).
