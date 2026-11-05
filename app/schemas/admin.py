@@ -289,6 +289,22 @@ def _username_claim(kc: Optional[KeycloakSettingsIn], existing: Optional[TenantS
     return cleaned or "preferred_username"
 
 
+def _kc_text(kc: Optional[KeycloakSettingsIn], name: str, existing: Optional[TenantSettings], field: str) -> str | None:
+    """Omitted keycloak fields keep the previous value. An explicit null clears."""
+    if kc is not None and name in kc.model_fields_set:
+        return getattr(kc, name)
+    return getattr(existing, field) if existing is not None else None
+
+
+def _kc_secret(
+    kc: Optional[KeycloakSettingsIn], name: str, existing: Optional[TenantSettings], field: str
+) -> str | None:
+    """Secrets stay when omitted or sent back as null."""
+    new = getattr(kc, name) if kc is not None else None
+    old = getattr(existing, field) if existing is not None else None
+    return _kept(new, old)
+
+
 def build_tenant_settings_from_input(
     payload: TenantIn,
     *,
@@ -363,27 +379,15 @@ def build_tenant_settings_from_input(
         auth_mode=auth_mode,
         auth_basic_bootstrap_user=bootstrap_user,
         auth_basic_bootstrap_password=bootstrap_password,
-        keycloak_url=kc.url if kc else None,
-        keycloak_realm=kc.realm if kc else None,
-        keycloak_client_id=kc.client_id if kc else None,
-        keycloak_client_secret=(
-            _kept(kc.client_secret, existing.keycloak_client_secret if existing else None) if kc else None
-        ),
-        keycloak_admin_client_id=kc.admin_client_id if kc else None,
-        keycloak_admin_client_secret=(
-            _kept(kc.admin_client_secret, existing.keycloak_admin_client_secret if existing else None) if kc else None
-        ),
-        keycloak_callback_uri=kc.callback_uri if kc else None,
-        worker_keycloak_client_id=(
-            _kept(kc.worker_client_id, existing.worker_keycloak_client_id if existing else None)
-            if kc
-            else (existing.worker_keycloak_client_id if existing else None)
-        ),
-        worker_keycloak_client_secret=(
-            _kept(kc.worker_client_secret, existing.worker_keycloak_client_secret if existing else None)
-            if kc
-            else (existing.worker_keycloak_client_secret if existing else None)
-        ),
+        keycloak_url=_kc_text(kc, "url", existing, "keycloak_url"),
+        keycloak_realm=_kc_text(kc, "realm", existing, "keycloak_realm"),
+        keycloak_client_id=_kc_text(kc, "client_id", existing, "keycloak_client_id"),
+        keycloak_client_secret=_kc_secret(kc, "client_secret", existing, "keycloak_client_secret"),
+        keycloak_admin_client_id=_kc_text(kc, "admin_client_id", existing, "keycloak_admin_client_id"),
+        keycloak_admin_client_secret=_kc_secret(kc, "admin_client_secret", existing, "keycloak_admin_client_secret"),
+        keycloak_callback_uri=_kc_text(kc, "callback_uri", existing, "keycloak_callback_uri"),
+        worker_keycloak_client_id=_kc_secret(kc, "worker_client_id", existing, "worker_keycloak_client_id"),
+        worker_keycloak_client_secret=_kc_secret(kc, "worker_client_secret", existing, "worker_keycloak_client_secret"),
         keycloak_username_claim=_username_claim(kc, existing),
     )
     settings.validate()
