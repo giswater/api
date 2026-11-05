@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-11-05
+
+### Fixed
+
+- Plugins folder is now a Python module.
+
 ## [1.9.0] - 2026-11-05
 
 ### Added
@@ -417,7 +423,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.9.0...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.9.1...main
+[1.9.1]: https://github.com/Giswater/giswater-api/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/Giswater/giswater-api/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/Giswater/giswater-api/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/Giswater/giswater-api/compare/v1.7.0...v1.8.0
