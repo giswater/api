@@ -269,6 +269,8 @@ class TenantSettings:
     # Background jobs. Unset falls back to KEYCLOAK_CLIENT_*.
     worker_keycloak_client_id: str | None = None
     worker_keycloak_client_secret: str | None = None
+    # JWT claim used as the DB role / preferred username. Missing claim falls back to preferred_username, then sub.
+    keycloak_username_claim: str = "preferred_username"
     # Capability role names. Comma-separated names are OR. Empty falls back to the default.
     role_basic: str = "basic"
     role_om: str = "om"
@@ -422,6 +424,8 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         keycloak_callback_uri=env.get("KEYCLOAK_CALLBACK_URI") or None,
         worker_keycloak_client_id=env.get("WORKER_KEYCLOAK_CLIENT_ID") or None,
         worker_keycloak_client_secret=env.get("WORKER_KEYCLOAK_CLIENT_SECRET") or None,
+        keycloak_username_claim=(env.get("KEYCLOAK_USERNAME_CLAIM") or "preferred_username").strip()
+        or "preferred_username",
         **{cap.field: normalize_role_names(env.get(cap.env), default=cap.default) for cap in CAPABILITIES},
     )
 

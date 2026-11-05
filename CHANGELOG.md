@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`/cmms` visits and attachments** (list, get, create, update, delete, file download), gated by `API_CMMS`. Writes go to the singleton `cmms` schema; the DB user needs `role_cmms`. Uploads are stored under `FILES_DIR` (default `data/files`, Docker volume `giswater_api_files`) at `{dir}/{tenant_id}/cmms/{attachment_id}/`, capped by `FILES_MAX_UPLOAD_MB` (default 100, 413 over the limit). `FILES_PUBLIC_URL` is the optional public base for stored paths. Admin tenant JSON exposes the three settings as `files`. Images and PDFs get a thumbnail; large images and HEIC/HEIF are resized (Pillow, pillow-heif, pypdfium2).
+- Tenant setting `KEYCLOAK_USERNAME_CLAIM` (default `preferred_username`, admin `auth.keycloak.username_claim`). The named JWT claim is the DB role for `SET ROLE`. If it is missing, the API falls back to `preferred_username`, then `sub`.
 - **CMMS MCP tools**: `list_visits`, `get_visit`, `create_visit`, `update_visit`, `delete_visit`, `list_attachments`, `get_attachment`. File upload stays on the REST API.
 - Tenant settings `ROLE_BASIC`, `ROLE_OM`, `ROLE_EDIT`, `ROLE_EPA`, `ROLE_PLAN`, `ROLE_ADMIN` and `ROLE_SYSTEM` (defaults are the capability ids, admin `roles.<id>`). `require_capability` resolves the Keycloak or basic-auth role name from the matching setting. Comma-separated names are OR. Unset keeps the capability id. Checks are exact names; a higher Giswater role does not imply a lower one.
 - **Alembic revision `0003_gwapi_capability_roles`**: replaces the unused `gwapi.roles` rows from `0001` (`role_basic`, `role_edit`, `role_om`, `role_epa`, `role_master`) with `basic`, `om`, `edit`, `epa`, `plan`, `admin` and `system`.
@@ -20,14 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Job progress reporting (`app/jobs/progress.py`) and background-job Keycloak auth (`app/jobs/worker_auth.py`). Jobs use a service account (`client_credentials`), preferring `WORKER_KEYCLOAK_CLIENT_*` and falling back to `KEYCLOAK_CLIENT_*`.
 - Docker Compose services: `redis`, `celery-worker`, `celery-beat` (dev and production `deploy/docker-compose.yml`).
 - Tests: `test_jobs_execute_task`, `test_jobs_reconcile`, `test_jobs_registry`.
-
-### Changed
-
-- Job status includes `step_durations_ms` with the elapsed time of each progress step.
-- **Breaking:** run jobs with `celery -A app.celery_app worker -Q giswater.jobs` (polling worker removed earlier).
-- `ensure_tenant_database` always runs Alembic when the tenant has a DB pool (jobs need `gwapi.jobs` regardless of auth mode / logging).
-- `JobService.create_job` enqueues Celery tasks after DB insert.
-- Job HTTP DTOs live in `app/schemas/jobs.py`; domain models stay in `app/jobs/models.py`.
 
 ### Fixed
 
