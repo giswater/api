@@ -137,6 +137,7 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("KEYCLOAK_CALLBACK_URI", settings.keycloak_callback_uri),
         ("WORKER_KEYCLOAK_CLIENT_ID", settings.worker_keycloak_client_id),
         ("WORKER_KEYCLOAK_CLIENT_SECRET", settings.worker_keycloak_client_secret),
+        ("KEYCLOAK_USERNAME_CLAIM", settings.keycloak_username_claim),
     )
     lines = [f"{key}={_format_value(value)}" for key, value in fields if value is not None]
     return "\n".join(lines) + "\n"

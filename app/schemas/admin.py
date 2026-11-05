@@ -64,6 +64,7 @@ class KeycloakSettingsIn(BaseModel):
     callback_uri: Optional[str] = None
     worker_client_id: Optional[str] = None
     worker_client_secret: Optional[str] = None
+    username_claim: Optional[str] = None
 
 
 class KeycloakSettingsOut(BaseModel):
@@ -77,6 +78,7 @@ class KeycloakSettingsOut(BaseModel):
     callback_uri: Optional[str] = None
     worker_client_id: Optional[str] = None
     worker_client_secret: Optional[str] = None  # _REDACTED or null
+    username_claim: str = "preferred_username"
 
 
 class AuthSettingsIn(BaseModel):
@@ -181,6 +183,7 @@ class TenantOut(BaseModel):
                 callback_uri=s.keycloak_callback_uri,
                 worker_client_id=s.worker_keycloak_client_id,
                 worker_client_secret=_REDACTED if s.worker_keycloak_client_secret else None,
+                username_claim=s.keycloak_username_claim,
             )
         auth = AuthSettingsOut(
             mode=s.auth_mode,
@@ -219,6 +222,15 @@ def _role_value(
     if existing_value is not None:
         return existing_value
     return default
+
+
+def _username_claim(kc: Optional[KeycloakSettingsIn], existing: Optional[TenantSettings]) -> str:
+    """JWT claim for the DB role. Omitted keeps the previous value; blank resets to the default."""
+    raw = kc.username_claim if kc is not None else None
+    if raw is None and existing is not None:
+        raw = existing.keycloak_username_claim
+    cleaned = (raw or "preferred_username").strip()
+    return cleaned or "preferred_username"
 
 
 def build_tenant_settings_from_input(
@@ -326,4 +338,5 @@ def build_tenant_settings_from_input(
             if kc
             else (existing.worker_keycloak_client_secret if existing else None)
         ),
+        keycloak_username_claim=_username_claim(kc, existing),
     )

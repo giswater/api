@@ -223,7 +223,7 @@ r.raise_for_status()
 print(r.json())
 ```
 
-Missing/invalid Bearer → **401**. Roles come from JWT `realm_access.roles` and `resource_access.<client_id>.roles`; the DB role used for `SET ROLE` is the token's `preferred_username` (or `sub`).
+Missing/invalid Bearer → **401**. Roles come from JWT `realm_access.roles` and `resource_access.<client_id>.roles`. The DB role used for `SET ROLE` is the claim named by `KEYCLOAK_USERNAME_CLAIM` (default `preferred_username`). If that claim is absent, the API uses `preferred_username`, then `sub`.
 
 ---
 

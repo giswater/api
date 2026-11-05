@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tenant setting `KEYCLOAK_USERNAME_CLAIM` (default `preferred_username`, admin `auth.keycloak.username_claim`). The named JWT claim is the DB role for `SET ROLE`. If it is missing, the API falls back to `preferred_username`, then `sub`.
 - **`/cmms` visits and attachments** (list, get, create, update, delete, file download), gated by `API_CMMS`. Writes go to the singleton `cmms` schema; the DB user needs `role_cmms`. Uploads are stored under `CMMS_STORAGE_DIR` (default `data/cmms`, Docker volume `giswater_api_cmms`), capped by `CMMS_MAX_UPLOAD_MB` (default 100, 413 over the limit). Images and PDFs get a thumbnail; large images and HEIC/HEIF are resized (Pillow, pillow-heif, pypdfium2).
 - **CMMS MCP tools**: `list_visits`, `get_visit`, `create_visit`, `update_visit`, `delete_visit`, `list_attachments`, `get_attachment`. File upload stays on the REST API.
 - Tenant settings `ROLE_BASIC`, `ROLE_OM`, `ROLE_EDIT`, `ROLE_EPA`, `ROLE_PLAN`, `ROLE_ADMIN` and `ROLE_SYSTEM` (defaults are the capability ids, admin `roles.<id>`). `require_capability` resolves the Keycloak or basic-auth role name from the matching setting. Comma-separated names are OR. Unset keeps the capability id. Checks are exact names; a higher Giswater role does not imply a lower one.

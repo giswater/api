@@ -11,9 +11,21 @@ or (at your option) any later version.
 import warnings
 
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from app.auth.session import verify_token
 from app.core.config import _build_tenant, _resolve_auth_mode
 from app.auth.schemas import ApiUser
 from app.db.context import DB_IDENTITY_CTX, DbIdentity, _resolve_db_identity
+from app.schemas.admin import (
+    AuthSettingsIn,
+    DbSettingsIn,
+    KeycloakSettingsIn,
+    TenantIn,
+    build_tenant_settings_from_input,
+)
+from app.tenancy.registry import serialize_tenant_settings
 
 
 def test_resolve_auth_mode_explicit_none():
@@ -66,6 +78,82 @@ def test_resolve_db_identity_without_context():
     assert _resolve_db_identity() is None
     assert _resolve_db_identity("alice") == "alice"
     assert _resolve_db_identity("alice", "postgres") == "postgres"
+
+
+def test_build_tenant_username_claim_default():
+    assert _build_tenant({}).keycloak_username_claim == "preferred_username"
+    assert _build_tenant({"KEYCLOAK_USERNAME_CLAIM": "  "}).keycloak_username_claim == "preferred_username"
+
+
+def test_build_tenant_username_claim_override():
+    settings = _build_tenant({"KEYCLOAK_USERNAME_CLAIM": " email "})
+    assert settings.keycloak_username_claim == "email"
+
+
+def _idp():
+    return SimpleNamespace(public_key="unused", client_id="giswater-api")
+
+
+def _user_from_payload(payload: dict, username_claim: str = "preferred_username"):
+    with patch("app.auth.session.jwt.decode", return_value=payload):
+        return verify_token("token", _idp(), username_claim=username_claim)
+
+
+def test_verify_token_uses_configured_claim():
+    user = _user_from_payload(
+        {"sub": "uuid", "preferred_username": "alice", "db_user": "alice_db"},
+        username_claim="db_user",
+    )
+    assert user.preferred_username == "alice_db"
+    assert user.db_role == "alice_db"
+    assert user.sub == "uuid"
+
+
+def test_verify_token_missing_custom_claim_falls_back_to_preferred_username():
+    user = _user_from_payload(
+        {"sub": "uuid", "preferred_username": "alice"},
+        username_claim="db_user",
+    )
+    assert user.preferred_username == "alice"
+    assert user.db_role == "alice"
+
+
+def test_verify_token_falls_back_to_sub():
+    user = _user_from_payload({"sub": "uuid"}, username_claim="db_user")
+    assert user.preferred_username == "uuid"
+    assert user.db_role == "uuid"
+    assert user.sub == "uuid"
+
+
+def test_verify_token_falls_back_to_unknown():
+    user = _user_from_payload({}, username_claim="db_user")
+    assert user.preferred_username == "unknown"
+    assert user.db_role == "unknown"
+    assert user.sub == "unknown"
+
+
+def test_admin_username_claim_round_trip():
+    payload = TenantIn(
+        db=DbSettingsIn(password="secret"),
+        auth=AuthSettingsIn(mode="keycloak", keycloak=KeycloakSettingsIn(username_claim=" email ")),
+    )
+    created = build_tenant_settings_from_input(payload)
+    assert created.keycloak_username_claim == "email"
+
+    kept = build_tenant_settings_from_input(TenantIn(db=DbSettingsIn(password="secret")), existing=created)
+    assert kept.keycloak_username_claim == "email"
+
+    reset = build_tenant_settings_from_input(
+        TenantIn(
+            db=DbSettingsIn(password="secret"),
+            auth=AuthSettingsIn(mode="keycloak", keycloak=KeycloakSettingsIn(username_claim="")),
+        ),
+        existing=created,
+    )
+    assert reset.keycloak_username_claim == "preferred_username"
+
+    body = serialize_tenant_settings(created)
+    assert "KEYCLOAK_USERNAME_CLAIM=email" in body
 
 
 def test_resolve_db_identity_from_context():
