@@ -104,8 +104,9 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("API_FEATURES", settings.api_features),
         ("API_MCP", settings.api_mcp),
         ("API_CMMS", settings.api_cmms),
-        ("CMMS_MAX_UPLOAD_MB", settings.cmms_max_upload_mb),
-        ("CMMS_PUBLIC_URL", settings.cmms_public_url),
+        ("FILES_DIR", settings.files_dir),
+        ("FILES_MAX_UPLOAD_MB", settings.files_max_upload_mb),
+        ("FILES_PUBLIC_URL", settings.files_public_url),
         (
             "ENABLED_PLUGINS",
             ",".join(sorted(settings.enabled_plugins)) if settings.enabled_plugins else None,

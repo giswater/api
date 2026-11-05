@@ -48,8 +48,8 @@ class TenantService:
     async def create_tenant(self, payload: TenantCreateIn) -> TenantOut:
         self.require_writes()
         self._validate_id_or_409(payload.id)
-        settings = build_tenant_settings_from_input(payload)
         try:
+            settings = build_tenant_settings_from_input(payload)
             tenant = await self.registry.create(payload.id, settings)
         except ValueError as exc:
             raise TenantServiceError(str(exc), status_code=400) from exc
@@ -60,7 +60,10 @@ class TenantService:
         existing = self.registry.get(tid)
         if existing is None:
             raise TenantServiceError(f"Tenant '{tid}' not found", status_code=404)
-        settings = build_tenant_settings_from_input(payload, existing=existing.settings)
+        try:
+            settings = build_tenant_settings_from_input(payload, existing=existing.settings)
+        except ValueError as exc:
+            raise TenantServiceError(str(exc), status_code=400) from exc
         try:
             tenant = await self.registry.update(tid, settings)
         except KeyError as exc:

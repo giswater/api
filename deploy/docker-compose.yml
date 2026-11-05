@@ -24,9 +24,9 @@ services:
     volumes:
       - ./config:/app/config:ro
       - giswater_api_logs:/app/logs
-      # Named volume: host nginx cannot serve these files. For CMMS_PUBLIC_URL,
-      # bind-mount instead, e.g. /srv/giswater/cmms:/app/data/cmms
-      - giswater_api_cmms:/app/data/cmms
+      # Named volume: host nginx cannot serve these files. For FILES_PUBLIC_URL,
+      # bind-mount instead, e.g. /srv/giswater/files:/app/data/files
+      - giswater_api_files:/app/data/files
       - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
     extra_hosts:
       # Reach Postgres on the Docker host (Debian/Ubuntu production default).
@@ -91,4 +91,4 @@ services:
 
 volumes:
   giswater_api_logs:
-  giswater_api_cmms:
+  giswater_api_files:

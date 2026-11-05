@@ -217,7 +217,7 @@ def test_create_visit_rejects_bad_dates(client, default_params):
 
 def test_upload_over_limit_is_413(client, default_params):
     assert_ready(client)
-    root = Path(os.environ["CMMS_STORAGE_DIR"]) / "test"
+    root = Path(os.environ["FILES_DIR"]) / "test" / "cmms"
     before = set(root.iterdir()) if root.exists() else set()
     blob = b"\x00" * (2 * 1024 * 1024 + 1)
     resp = client.post(
@@ -326,7 +326,7 @@ def test_visit_and_attachment_crud(client, default_params, cmms_ready):
     assert removed["attachments"][0]["id"] == attachment_id
     missing = client.get(api(f"/cmms/attachments/{attachment_id}/file"), params=default_params)
     assert missing.status_code == 404
-    storage = Path(os.environ["CMMS_STORAGE_DIR"]) / "test" / attachment_id
+    storage = Path(os.environ["FILES_DIR"]) / "test" / "cmms" / attachment_id
     assert not storage.exists()
 
     for item in [pdf["attachments"][0], text["attachments"][0], extra["attachments"][0]]:
@@ -400,12 +400,17 @@ def _set_attachment_path(attachment_id: str, path: str) -> None:
     asyncio.run(_run())
 
 
-def test_cmms_public_url_strips_trailing_slash():
+def test_files_public_url_strips_trailing_slash():
     from app.core.config import _build_tenant
 
-    settings = _build_tenant({"CMMS_PUBLIC_URL": "https://files.example/giswater/files/"})
-    assert settings.cmms_public_url == "https://files.example/giswater/files"
-    assert _build_tenant({"CMMS_PUBLIC_URL": "  "}).cmms_public_url is None
+    settings = _build_tenant({"FILES_PUBLIC_URL": "https://files.example/giswater/files/"})
+    assert settings.files_public_url == "https://files.example/giswater/files"
+    assert _build_tenant({"FILES_PUBLIC_URL": "  "}).files_public_url is None
+    assert _build_tenant({}).files_dir == "data/files"
+    assert _build_tenant({"FILES_DIR": "  "}).files_dir == "data/files"
+    bad = _build_tenant({"FILES_MAX_UPLOAD_MB": "0"})
+    with pytest.raises(ValueError, match="FILES_MAX_UPLOAD_MB"):
+        bad.validate()
 
 
 def test_stored_path_is_public_url_or_key_and_file_resolves_by_name(tmp_path):
@@ -416,7 +421,7 @@ def test_stored_path_is_public_url_or_key_and_file_resolves_by_name(tmp_path):
         user_id=None,
         db_role=None,
     )
-    stored = tmp_path / "test" / "att" / "my_photo.png"
+    stored = tmp_path / "test" / "cmms" / "att" / "my_photo.png"
     stored.parent.mkdir(parents=True)
     stored.write_bytes(b"png")
     (stored.parent / "my_photo.png_thumb.jpg").write_bytes(b"\xff\xd8")
@@ -427,14 +432,14 @@ def test_stored_path_is_public_url_or_key_and_file_resolves_by_name(tmp_path):
         max_upload_bytes=1,
         public_url="https://files.example/giswater/files/",
     )
-    url = "https://files.example/giswater/files/test/att/my_photo.png"
+    url = "https://files.example/giswater/files/test/cmms/att/my_photo.png"
     assert public._relative(stored) == url
     assert public._relative(stored.parent / "my_photo.png_thumb.jpg").endswith("/my_photo.png_thumb.jpg")
     assert public._resolve_stored("att", url) == stored.resolve()
 
     plain = CmmsService(ctx, storage_dir=tmp_path, max_upload_bytes=1)
-    assert plain._relative(stored) == "test/att/my_photo.png"
-    assert plain._resolve_stored("att", "test/att/my_photo.png") == stored.resolve()
+    assert plain._relative(stored) == "test/cmms/att/my_photo.png"
+    assert plain._resolve_stored("att", "test/cmms/att/my_photo.png") == stored.resolve()
     assert plain._resolve_stored("att", "https://example.com/x.jpg") == "https://example.com/x.jpg"
 
     redirected = _file(("https://example.com/x.jpg", "image/jpeg", "x.jpg"))
@@ -452,7 +457,7 @@ def test_public_url_is_stored_and_external_path_redirects(client, default_params
     tenant = _tenant()
     previous = tenant.settings
     base = "https://files.example/giswater/files"
-    tenant.settings = replace(previous, cmms_public_url=base)
+    tenant.settings = replace(previous, files_public_url=base)
     visit_id = None
     attachment_id = None
     try:
@@ -475,9 +480,9 @@ def test_public_url_is_stored_and_external_path_redirects(client, default_params
         )
         item = uploaded["attachments"][0]
         attachment_id = item["id"]
-        assert item["path"].startswith(f"{base}/test/")
+        assert item["path"].startswith(f"{base}/test/cmms/")
         assert item["path"].endswith("/my_photo.png")
-        assert item["thumbnail_path"].startswith(f"{base}/test/")
+        assert item["thumbnail_path"].startswith(f"{base}/test/cmms/")
         assert item["thumbnail_path"].endswith("/my_photo.png_thumb.jpg")
 
         file_resp = client.get(api(f"/cmms/attachments/{attachment_id}/file"), params=default_params)

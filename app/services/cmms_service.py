@@ -188,8 +188,11 @@ class CmmsService:
             db_role=self.ctx.db_role,
         )
 
+    def _cmms_root(self) -> Path:
+        return self.storage_dir / self.ctx.tenant_id / "cmms"
+
     def _remove_dir(self, attachment_id: str) -> None:
-        root = (self.storage_dir / self.ctx.tenant_id).resolve()
+        root = self._cmms_root().resolve()
         path = (root / attachment_id).resolve()
         if path.is_relative_to(root):
             shutil.rmtree(path, ignore_errors=True)
@@ -198,7 +201,7 @@ class CmmsService:
         root = self.storage_dir.resolve()
         full = path.resolve()
         if not full.is_relative_to(root):
-            raise HTTPException(status_code=500, detail="Stored file escaped the CMMS storage directory")
+            raise HTTPException(status_code=500, detail="Stored file escaped the files directory")
         key = full.relative_to(root).as_posix()
         if not self.public_url:
             return key
@@ -207,7 +210,7 @@ class CmmsService:
     def _resolve_stored(self, attachment_id: str, stored: str) -> Path | str:
         """Local file for this attachment, or an external http(s) URL when nothing is on disk."""
         name = unquote(PurePosixPath(urlsplit(stored).path).name)
-        root = (self.storage_dir / self.ctx.tenant_id / attachment_id).resolve()
+        root = (self._cmms_root() / attachment_id).resolve()
         full = (root / name).resolve()
         if name not in ("", ".", "..") and full.is_relative_to(root) and full.is_file():
             return full
@@ -218,7 +221,7 @@ class CmmsService:
     async def _store_one(self, upload: AttachmentUpload) -> dict:
         attachment_id = str(uuid4())
         filename = _safe_name(upload.file.filename)
-        directory = self.storage_dir / self.ctx.tenant_id / attachment_id
+        directory = self._cmms_root() / attachment_id
         directory.mkdir(parents=True, exist_ok=True)
         try:
             dest = directory / filename

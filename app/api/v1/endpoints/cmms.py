@@ -13,7 +13,6 @@ from fastapi import APIRouter, File, Query
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.api.deps import CommonsDep, get_service_context
-from app.core.config import global_settings
 from app.schemas.cmms.cmms_models import AttachmentUpdate, AttachmentUpload, CmmsResponse, VisitCreate, VisitUpdate
 from app.services.cmms_service import CmmsService
 
@@ -21,11 +20,12 @@ router = APIRouter(prefix="/cmms", tags=["CMMS"])
 
 
 def _service(commons: dict) -> CmmsService:
+    settings = commons["tenant"].settings
     return CmmsService(
         get_service_context(commons),
-        storage_dir=Path(global_settings.cmms_storage_dir),
-        max_upload_bytes=commons["tenant"].settings.cmms_max_upload_mb * 1024 * 1024,
-        public_url=commons["tenant"].settings.cmms_public_url,
+        storage_dir=Path(settings.files_dir),
+        max_upload_bytes=settings.files_max_upload_mb * 1024 * 1024,
+        public_url=settings.files_public_url,
     )
 
 
