@@ -7,7 +7,7 @@
 #   - DNS multi-tenant mode: proxy_set_header Host $host; (app resolves tenant from Host).
 #   - Single-tenant mode (SINGLE_TENANT_ID=<id>): Host is ignored by the app;
 #     see the IP-only block at the bottom of this file.
-#   - CMMS uploads: client_max_body_size must be >= the tenant CMMS_MAX_UPLOAD_MB
+#   - File uploads: client_max_body_size must be >= the tenant FILES_MAX_UPLOAD_MB
 #     (default 100). Otherwise nginx rejects the body before the API sees it.
 
 # Apex domain: Giswater platform surface under /giswater (admin, probes, static).
@@ -40,6 +40,17 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    # Public files (hybrid). FILES_PUBLIC_URL must be https://<host>/giswater/files
+    # (no trailing slash). A stored object is
+    # {url}/{tenant_id}/cmms/{attachment_id}/{file}. Host nginx cannot read the
+    # named volume giswater_api_files; bind-mount the storage dir
+    # (see deploy/docker-compose.yml) and point alias at it.
+    # autoindex off is required: the UUID in the path is the only access control.
+    # location /giswater/files/ {
+    #     alias /srv/giswater/files/;
+    #     autoindex off;
+    # }
 
     # Example: another app on the same tenant host
     # location /other-app/ {

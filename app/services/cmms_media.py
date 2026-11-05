@@ -42,8 +42,12 @@ def resolve_content_type(name: str, content_type: str | None) -> str:
     return (guessed or raw or "application/octet-stream").lower()
 
 
+def thumbnail_path(stored: Path) -> Path:
+    return stored.with_name(f"{stored.name}_thumb.jpg")
+
+
 def process_upload(path: Path, content_type: str) -> dict:
-    """Compress images, pull EXIF, and write thumb.jpg when we know how.
+    """Compress images, pull EXIF, and write {name}_thumb.jpg when we know how.
 
     Returns path, content_type, size, thumbnail_path, coordinates, metadata.
     A processing failure keeps the original file and leaves thumbnail_path null.
@@ -61,7 +65,7 @@ def process_upload(path: Path, content_type: str) -> dict:
             result["thumbnail_path"] = _pdf_thumbnail(path)
         except Exception:
             logger.exception("cmms pdf thumbnail failed for %s", path.name)
-            (path.parent / "thumb.jpg").unlink(missing_ok=True)
+            thumbnail_path(path).unlink(missing_ok=True)
     return result
 
 
@@ -98,7 +102,7 @@ def _process_image(path: Path, content_type: str, result: dict) -> None:
         result["content_type"] = content_type
         result["size"] = stored.stat().st_size
         try:
-            result["thumbnail_path"] = _thumbnail(thumb_source, stored.parent)
+            result["thumbnail_path"] = _thumbnail(thumb_source, stored)
         except Exception:
             logger.exception("cmms thumbnail failed for %s", stored.name)
             result["thumbnail_path"] = None
@@ -206,12 +210,12 @@ def _compress(path: Path, img: Image.Image, content_type: str, meta: dict) -> tu
     return dest, work, stored_type
 
 
-def _thumbnail(img: Image.Image, directory: Path) -> Path:
+def _thumbnail(img: Image.Image, stored: Path) -> Path:
     thumb = img.copy()
     thumb.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.Resampling.LANCZOS)
     if thumb.mode != "RGB":
         thumb = thumb.convert("RGB")
-    dest = directory / "thumb.jpg"
+    dest = thumbnail_path(stored)
     thumb.save(dest, "JPEG", quality=80)
     return dest
 
@@ -228,6 +232,6 @@ def _pdf_thumbnail(path: Path) -> Path:
         image = bitmap.to_pil().convert("RGB")
     finally:
         pdf.close()
-    dest = path.parent / "thumb.jpg"
+    dest = thumbnail_path(path)
     image.save(dest, "JPEG", quality=80)
     return dest

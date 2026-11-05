@@ -135,7 +135,19 @@ def test_verify_token_falls_back_to_unknown():
 def test_admin_username_claim_round_trip():
     payload = TenantIn(
         db=DbSettingsIn(password="secret"),
-        auth=AuthSettingsIn(mode="keycloak", keycloak=KeycloakSettingsIn(username_claim=" email ")),
+        auth=AuthSettingsIn(
+            mode="keycloak",
+            keycloak=KeycloakSettingsIn(
+                url="https://auth.example",
+                realm="giswater",
+                client_id="giswater-api",
+                client_secret="secret",
+                admin_client_id="admin-cli",
+                admin_client_secret="admin-secret",
+                callback_uri="https://api.example/callback",
+                username_claim=" email ",
+            ),
+        ),
     )
     created = build_tenant_settings_from_input(payload)
     assert created.keycloak_username_claim == "email"
