@@ -82,7 +82,8 @@ jobs:
               if not ref or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-" for c in ref):
                   sys.exit(f"Ref not allowed: {ref!r}")
 
-          open(os.environ["RUNNER_TEMP"] + "/doc-targets.txt", "w").write("\n".join(targets))
+          # Trailing newline: `read` skips a last line that has none, and with one target that skips the export.
+          open(os.environ["RUNNER_TEMP"] + "/doc-targets.txt", "w").write("\n".join(targets) + ("\n" if targets else ""))
           print("Targets:", " ".join(targets) or "(none)")
           PY
 
