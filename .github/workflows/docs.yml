@@ -1,0 +1,205 @@
+name: 📖 Publish API docs
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      refs:
+        description: "all, or a space-separated list of refs (main, v1.9.1, ...)"
+        required: true
+        default: all
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          path: src
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Export specs and publish gh-pages
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          INPUT_REFS: ${{ inputs.refs }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os, subprocess, sys
+
+          event = os.environ["EVENT_NAME"]
+          ref_name = os.environ["REF_NAME"]
+          ref_type = os.environ["REF_TYPE"]
+          raw = os.environ.get("INPUT_REFS", "").strip()
+
+          def parse(tag: str):
+              if not tag.startswith("v"):
+                  return None
+              nums = []
+              for part in tag[1:].split("."):
+                  if not part.isdigit():
+                      return None
+                  nums.append(int(part))
+              return tuple(nums)
+
+          def tags_since_v1() -> list[str]:
+              out = subprocess.check_output(["git", "-C", "src", "tag", "-l", "v*"], text=True)
+              return [tag for tag in out.split() if (parsed := parse(tag)) and parsed >= (1, 0, 0)]
+
+          if event == "workflow_dispatch":
+              targets = ["main", *tags_since_v1()] if raw in ("", "all") else raw.split()
+          elif ref_type == "tag":
+              parsed = parse(ref_name)
+              if not parsed or parsed < (1, 0, 0):
+                  print(f"Skipping {ref_name} (docs start at v1.0.0)")
+                  targets = []
+              else:
+                  targets = [ref_name]
+          else:
+              targets = ["main"]
+
+          for ref in targets:
+              if not ref or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-" for c in ref):
+                  sys.exit(f"Ref not allowed: {ref!r}")
+
+          open(os.environ["RUNNER_TEMP"] + "/doc-targets.txt", "w").write("\n".join(targets))
+          print("Targets:", " ".join(targets) or "(none)")
+          PY
+
+          targets_file="${RUNNER_TEMP}/doc-targets.txt"
+          if [ ! -s "$targets_file" ]; then
+            exit 0
+          fi
+
+          git -C src fetch origin gh-pages || true
+          if git -C src rev-parse --verify --quiet origin/gh-pages >/dev/null; then
+            git -C src worktree add -B gh-pages "$GITHUB_WORKSPACE/site" origin/gh-pages
+          else
+            git -C src worktree add --orphan -b gh-pages "$GITHUB_WORKSPACE/site"
+          fi
+          mkdir -p site/specs
+
+          export_ref() {
+            local ref="$1" resolved wt
+            if git -C src rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
+              resolved="$ref"
+            elif git -C src rev-parse --verify --quiet "origin/${ref}^{commit}" >/dev/null; then
+              resolved="origin/$ref"
+            else
+              echo "Unknown ref: $ref" >&2
+              return 1
+            fi
+            wt="$(mktemp -d)"
+            git -C src worktree add --detach "$wt" "$resolved"
+            python3 -m venv "$wt/.venv"
+            "$wt/.venv/bin/pip" install --upgrade pip
+            "$wt/.venv/bin/pip" install "$wt"
+            # Import reads repo-relative files (app/static/logs.html), so cwd is the checkout.
+            ( cd "$wt" && "$wt/.venv/bin/python" - "$GITHUB_WORKSPACE/site/specs/${ref}.json" <<'PY'
+          import json, sys
+          from fastapi.openapi.utils import get_openapi
+          import app.main as m
+
+          auth_note = (
+              "\n\nAuthentication is configured per tenant and is one of: no authentication, "
+              "HTTP Basic, or Keycloak (OAuth2 bearer tokens). This reference lists every tenant "
+              "endpoint and does not declare security schemes."
+          )
+          prefix = next(r.path for r in m.parent.routes if getattr(r, "app", None) is m.tenant_app)
+          spec = get_openapi(
+              title=m.TITLE,
+              version=m.VERSION,
+              description=m.DESCRIPTION + auth_note,
+              routes=m.tenant_app.routes,
+              servers=[{
+                  "url": "https://{host}" + prefix,
+                  "variables": {"host": {"default": "your-tenant.example.com", "description": "Tenant hostname"}},
+              }],
+          )
+          spec.pop("security", None)
+          components = spec.get("components") or {}
+          components.pop("securitySchemes", None)
+          for path_item in (spec.get("paths") or {}).values():
+              if not isinstance(path_item, dict):
+                  continue
+              for operation in path_item.values():
+                  if isinstance(operation, dict):
+                      operation.pop("security", None)
+          with open(sys.argv[1], "w") as fh:
+              json.dump(spec, fh, indent=1)
+              fh.write("\n")
+          print(f"{spec['info']['version']}: {len(spec.get('paths') or {})} paths -> {sys.argv[1]}")
+          PY
+            )
+            git -C src worktree remove --force "$wt"
+          }
+
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            export_ref "$ref"
+          done < "$targets_file"
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          specs = Path("site/specs")
+
+          def version_key(ref: str):
+              nums = []
+              for part in ref[1:].split("."):
+                  nums.append(int(part) if part.isdigit() else 0)
+              return tuple(nums)
+
+          refs = sorted(p.stem for p in specs.glob("*.json"))
+          tags = sorted((ref for ref in refs if ref != "main"), key=version_key, reverse=True)
+          latest = tags[0] if tags else None
+          order = (["main"] if "main" in refs else []) + tags
+          sources = []
+          for ref in order:
+              title = ref
+              if ref == "main":
+                  title = "main (unreleased)"
+              elif ref == latest:
+                  title = f"{ref} (latest)"
+              entry = {"title": title, "slug": ref, "url": f"specs/{ref}.json"}
+              if ref == latest or (latest is None and ref == "main"):
+                  entry["default"] = True
+              sources.append(entry)
+          Path("site/versions.json").write_text(json.dumps(sources, indent=2) + "\n")
+          PY
+
+          cp src/docs/index.html site/index.html
+          cp src/app/static/favicon.ico site/favicon.ico
+          touch site/.nojekyll
+
+          git -C site add -A
+          if git -C site diff --cached --quiet; then
+            echo "Docs are unchanged"
+            exit 0
+          fi
+          git -C site \
+            -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Update published API docs"
+          git -C site push origin HEAD:gh-pages

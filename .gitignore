@@ -27,6 +27,7 @@ docker-compose.override.yml
 Pipfile
 Pipfile.lock
 *.egg-info/
+build/
 
 # VS Code settings
 .vscode/
