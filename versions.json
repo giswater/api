@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "title": "main (unreleased)",
+    "slug": "main",
+    "url": "specs/main.json",
+    "default": true
+  }
+]
