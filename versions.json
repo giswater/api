@@ -2,7 +2,92 @@
   {
     "title": "main (unreleased)",
     "slug": "main",
-    "url": "specs/main.json",
+    "url": "specs/main.json"
+  },
+  {
+    "title": "v1.9.1 (latest)",
+    "slug": "v1.9.1",
+    "url": "specs/v1.9.1.json",
     "default": true
+  },
+  {
+    "title": "v1.9.0",
+    "slug": "v1.9.0",
+    "url": "specs/v1.9.0.json"
+  },
+  {
+    "title": "v1.8.1",
+    "slug": "v1.8.1",
+    "url": "specs/v1.8.1.json"
+  },
+  {
+    "title": "v1.8.0",
+    "slug": "v1.8.0",
+    "url": "specs/v1.8.0.json"
+  },
+  {
+    "title": "v1.7.0",
+    "slug": "v1.7.0",
+    "url": "specs/v1.7.0.json"
+  },
+  {
+    "title": "v1.6.2",
+    "slug": "v1.6.2",
+    "url": "specs/v1.6.2.json"
+  },
+  {
+    "title": "v1.6.1",
+    "slug": "v1.6.1",
+    "url": "specs/v1.6.1.json"
+  },
+  {
+    "title": "v1.6.0",
+    "slug": "v1.6.0",
+    "url": "specs/v1.6.0.json"
+  },
+  {
+    "title": "v1.5.0",
+    "slug": "v1.5.0",
+    "url": "specs/v1.5.0.json"
+  },
+  {
+    "title": "v1.4.0",
+    "slug": "v1.4.0",
+    "url": "specs/v1.4.0.json"
+  },
+  {
+    "title": "v1.3.3",
+    "slug": "v1.3.3",
+    "url": "specs/v1.3.3.json"
+  },
+  {
+    "title": "v1.3.2",
+    "slug": "v1.3.2",
+    "url": "specs/v1.3.2.json"
+  },
+  {
+    "title": "v1.3.1",
+    "slug": "v1.3.1",
+    "url": "specs/v1.3.1.json"
+  },
+  {
+    "title": "v1.3.0",
+    "slug": "v1.3.0",
+    "url": "specs/v1.3.0.json"
+  },
+  {
+    "title": "v1.2.0",
+    "slug": "v1.2.0",
+    "url": "specs/v1.2.0.json"
+  },
+  {
+    "title": "v1.1.0",
+    "slug": "v1.1.0",
+    "url": "specs/v1.1.0.json"
+  },
+  {
+    "title": "v1.0.0",
+    "slug": "v1.0.0",
+    "url": "specs/v1.0.0.json"
   }
 ]
