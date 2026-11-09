@@ -197,12 +197,14 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `DB_POOL_MIN_SIZE` | `1` | Pool minimum connections. |
+| `DB_POOL_MIN_SIZE` | `1` | Pool minimum connections. Set to `0` to let `DB_POOL_MAX_IDLE` close the last idle connection. |
 | `DB_POOL_MAX_SIZE` | `10` | Pool maximum connections. Total DB load ≈ **tenants × `DB_POOL_MAX_SIZE`**. |
 | `DB_POOL_TIMEOUT` | `30` | Seconds to wait for a connection from the pool. |
 | `DB_POOL_MAX_WAITING` | `0` | Max queued waiters (psycopg pool). |
-| `DB_POOL_MAX_IDLE` | `300` | Seconds before idle connections may be dropped. |
+| `DB_POOL_MAX_IDLE` | `300` | Seconds an unused connection above `DB_POOL_MIN_SIZE` may sit before the pool drops it. Connections held to satisfy `DB_POOL_MIN_SIZE` are not dropped. |
 | `DB_CONNECT_TIMEOUT` | `5` | Seconds for initial pool open / connectivity checks. |
+
+Each checkout pings the connection and replaces it if Postgres or the network has already closed it. The pool also enables libpq TCP keepalives (`keepalives_idle=60`, `keepalives_interval=10`, `keepalives_count=5`, `tcp_user_timeout=120000`) unless `DATABASE_URL` already sets that parameter.
 
 ### Tenant API authentication
 
