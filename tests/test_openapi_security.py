@@ -102,6 +102,18 @@ def test_openapi_basic_mode(basic_openapi_client: TestClient):
     assert "/auth/token" not in schema["paths"]
 
 
+def test_docs_keycloak_prefills_scalar_auth(keycloak_openapi_client: TestClient):
+    # DEPRECATED #44: switch to /docs in 2.0.0
+    response = keycloak_openapi_client.get(f"{TENANT_PREFIX}/docs", headers={"Host": "kc.bgeo360.com"})
+    assert response.status_code == 200
+    assert "giswater-api" in response.text
+    assert "SHA-256" in response.text
+    assert "http://kc.bgeo360.com/giswater/v1/docs/oauth2-redirect" in response.text
+
+    redirect = keycloak_openapi_client.get(f"{TENANT_PREFIX}/docs/oauth2-redirect", headers={"Host": "kc.bgeo360.com"})
+    assert redirect.status_code == 200
+
+
 def test_openapi_keycloak_mode(keycloak_openapi_client: TestClient):
     schema = _fetch_openapi(keycloak_openapi_client, "kc.bgeo360.com")
     schemes = schema["components"]["securitySchemes"]

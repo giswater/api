@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- API docs (`${API_ROOT}/v1/docs` and `${API_ROOT}/admin/docs`) use Scalar instead of Swagger UI. Tag groups start collapsed. The sidebar search covers endpoints, tags, and models. Schemas are in the Models section.
+
+### Deprecated
+
+- **`${API_ROOT}/v1/docs/oauth2-redirect`** as the docs OAuth redirect URI (`DEPRECATED #44`; removal in **2.0.0**). The docs still use it, so existing Keycloak clients keep working. Add `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs` to *Valid redirect URIs* now; 2.0.0 switches to it and drops the old route.
+
 ### Fixed
 
 - Pooled connections that Postgres or a firewall closed while idle (often after ~2h with one worker) are detected on checkout and replaced, instead of failing the next request. TCP keepalives default to 60s unless `DATABASE_URL` sets them.

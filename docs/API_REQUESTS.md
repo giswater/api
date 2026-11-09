@@ -129,7 +129,7 @@ Each user's `db_role` must exist as a PostgreSQL role (`SET ROLE` on the request
 
 Send a Bearer JWT issued by that tenant's Keycloak realm. The API validates RS256 locally against the tenant IDP public key (audience = tenant `KEYCLOAK_CLIENT_ID`).
 
-Swagger UI at `${API_ROOT}/v1/docs` exposes **Authorize** with two OAuth2 flows (`keycloakPassword` and `keycloakAuthCode`) backed by the tenant token proxy below. You can also obtain tokens directly from Keycloak.
+The docs UI at `${API_ROOT}/v1/docs` exposes **Authorize** with two OAuth2 flows (`keycloakPassword` and `keycloakAuthCode`) backed by the tenant token proxy below. You can also obtain tokens directly from Keycloak.
 
 ### 1. Obtain a token via the tenant API proxy
 

@@ -232,17 +232,17 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 | `WORKER_KEYCLOAK_CLIENT_SECRET` | `KEYCLOAK_CLIENT_SECRET` | Secret for `WORKER_KEYCLOAK_CLIENT_ID`. |
 | `KEYCLOAK_USERNAME_CLAIM` | `preferred_username` | JWT claim used as the DB role (`SET ROLE`). If that claim is missing, the API falls back to `preferred_username`, then `sub`. |
 
-**Keycloak client checklist** (for the client named in `KEYCLOAK_CLIENT_ID`, required for Swagger OAuth and the token proxy):
+**Keycloak client checklist** (for the client named in `KEYCLOAK_CLIENT_ID`, required for docs OAuth and the token proxy):
 
-1. *Standard flow* ON — authorization-code button in Swagger UI.
-2. *Direct access grants* ON — username/password button in Swagger UI.
-3. *Valid redirect URIs* includes the exact `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs/oauth2-redirect` (in addition to `KEYCLOAK_CALLBACK_URI` if used elsewhere). Mid-host wildcards like `https://*.example.com/...` are **not** supported — only a trailing `*` (prefix match) or an exact URI.
+1. *Standard flow* ON — authorization-code button in the docs UI.
+2. *Direct access grants* ON — username/password button in the docs UI.
+3. *Valid redirect URIs* includes `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs/oauth2-redirect` (`DEPRECATED #44`; the docs still send this until **2.0.0**) and `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs` (what 2.0.0 will send), in addition to `KEYCLOAK_CALLBACK_URI` if used elsewhere. Mid-host wildcards like `https://*.example.com/...` are **not** supported — only a trailing `*` (prefix match) or an exact URI.
 4. An **Audience** protocol mapper with *Included Client Audience* = the same client (`KEYCLOAK_CLIENT_ID`) and *Add to access token* ON. Without it, `verify_token` rejects every token with `401 Invalid token` because Keycloak does not add the client to `aud` automatically.
 5. LDAP users authenticate through the realm's LDAP federation provider. The Direct Grant Flow must not force OTP, and the user must have no pending required actions (otherwise use the authorization-code flow).
 6. The API issues `SET ROLE` with the JWT claim named by `KEYCLOAK_USERNAME_CLAIM` (default `preferred_username`; missing claim falls back to `preferred_username`, then `sub`). Each user needs a matching PostgreSQL role.
 7. *Service accounts* OFF on this client. Jobs use `WORKER_KEYCLOAK_CLIENT_ID` (`giswater-worker`), not this client.
 
-**Local IdP:** `docker compose --profile keycloak up -d keycloak` starts a preconfigured Keycloak on `http://auth.localhost:8080` (realm/client/user ready for Swagger). See [docker/keycloak/README.md](../docker/keycloak/README.md).
+**Local IdP:** `docker compose --profile keycloak up -d keycloak` starts a preconfigured Keycloak on `http://auth.localhost:8080` (realm/client/user ready for the docs UI). See [docker/keycloak/README.md](../docker/keycloak/README.md).
 
 ---
 

@@ -105,7 +105,7 @@ services:
       api-network:
         ipv4_address: 172.21.1.53
 
-  # Local Keycloak for Swagger OAuth2 (password + auth-code). Optional:
+  # Local Keycloak for docs OAuth2 (password + auth-code). Optional:
   #   podman compose --profile keycloak up -d keycloak
   # See docker/keycloak/README.md
   keycloak:

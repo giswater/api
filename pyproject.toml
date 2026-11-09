@@ -26,6 +26,7 @@ dependencies = [
     "celery>=5.4.0",
     "redis>=5.0.0",
     "fastmcp==4.0.3",
+    "scalar-fastapi==1.9.1",
 ]
 
 [project.scripts]
