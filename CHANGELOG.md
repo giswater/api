@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-11
+
 ### Added
 
 - **`page` on `GET /features` collections** (nodes, arcs, links, connecs, gullies, and their GeoJSON routes). 1-based. Omit `orderBy` and rows are ordered by the feature id. Walk pages until `currentPage` >= `lastPage`. `page` > 1 needs Giswater DB ≥ 4.18.0 (`OFFSET` in `gw_fct_getfeatures`).
@@ -441,7 +443,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.9.1...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.10.0...main
+[1.10.0]: https://github.com/Giswater/giswater-api/compare/v1.9.1...v1.10.0
 [1.9.1]: https://github.com/Giswater/giswater-api/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/Giswater/giswater-api/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/Giswater/giswater-api/compare/v1.8.0...v1.8.1
