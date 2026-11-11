@@ -1485,7 +1485,7 @@
      "Features"
     ],
     "summary": "Get Nodes",
-    "description": "Returns a filtered collection of nodes from ve_node. Use sys_type for feature-class groups (e.g. VALVE) and node_type for subtypes (e.g. CHECK_VALVE). Mapzone filters such as dma_id and sector_id are supported.",
+    "description": "Returns a filtered collection of nodes from ve_node. Use sys_type for feature-class groups (e.g. VALVE) and node_type for subtypes (e.g. CHECK_VALVE). Mapzone filters such as dma_id and sector_id are supported. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_nodes_features_nodes_get",
     "parameters": [
      {
@@ -1567,6 +1567,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -1920,7 +1933,7 @@
      "Features"
     ],
     "summary": "Get Nodes Geojson",
-    "description": "Returns nodes as a GeoJSON FeatureCollection, with the same filters as GET /features/nodes.",
+    "description": "Returns nodes as a GeoJSON FeatureCollection, with the same filters as GET /features/nodes. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_nodes_geojson_features_nodes_geojson_get",
     "parameters": [
      {
@@ -2002,6 +2015,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -2733,7 +2759,7 @@
      "Features"
     ],
     "summary": "Get Arcs",
-    "description": "Returns a filtered collection of arcs from ve_arc. Filter by mapzones (dma_id, sector_id, \u2026), sys_type, arc_type, or catalog fields.",
+    "description": "Returns a filtered collection of arcs from ve_arc. Filter by mapzones (dma_id, sector_id, \u2026), sys_type, arc_type, or catalog fields. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_arcs_features_arcs_get",
     "parameters": [
      {
@@ -2815,6 +2841,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -3204,7 +3243,7 @@
      "Features"
     ],
     "summary": "Get Arcs Geojson",
-    "description": "Returns arcs as a GeoJSON FeatureCollection, with the same filters as GET /features/arcs.",
+    "description": "Returns arcs as a GeoJSON FeatureCollection, with the same filters as GET /features/arcs. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_arcs_geojson_features_arcs_geojson_get",
     "parameters": [
      {
@@ -3286,6 +3325,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -4053,7 +4105,7 @@
      "Features"
     ],
     "summary": "Get Links",
-    "description": "Returns a filtered collection of links from ve_link. Filter by mapzones, sys_type, or link_type.",
+    "description": "Returns a filtered collection of links from ve_link. Filter by mapzones, sys_type, or link_type. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_links_features_links_get",
     "parameters": [
      {
@@ -4134,6 +4186,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -4466,7 +4531,7 @@
      "Features"
     ],
     "summary": "Get Links Geojson",
-    "description": "Returns links as a GeoJSON FeatureCollection, with the same filters as GET /features/links.",
+    "description": "Returns links as a GeoJSON FeatureCollection, with the same filters as GET /features/links. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_links_geojson_features_links_geojson_get",
     "parameters": [
      {
@@ -4547,6 +4612,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -5257,7 +5335,7 @@
      "Features"
     ],
     "summary": "Get Connecs",
-    "description": "Returns a filtered collection of connecs from ve_connec. Filter by mapzones (dma_id, sector_id, \u2026), sys_type, connec_type, or customer_code.",
+    "description": "Returns a filtered collection of connecs from ve_connec. Filter by mapzones (dma_id, sector_id, \u2026), sys_type, connec_type, or customer_code. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_connecs_features_connecs_get",
     "parameters": [
      {
@@ -5339,6 +5417,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -5710,7 +5801,7 @@
      "Features"
     ],
     "summary": "Get Connecs Geojson",
-    "description": "Returns connecs as a GeoJSON FeatureCollection, with the same filters as GET /features/connecs.",
+    "description": "Returns connecs as a GeoJSON FeatureCollection, with the same filters as GET /features/connecs. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_connecs_geojson_features_connecs_geojson_get",
     "parameters": [
      {
@@ -5792,6 +5883,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -6541,7 +6645,7 @@
      "Features"
     ],
     "summary": "Get Gullies",
-    "description": "Returns a filtered collection of gullies from ve_gully. UD (urban drainage) schemas only \u2014 ve_gully does not exist on water-supply (WS) schemas. Filter by mapzones, sys_type, gully_type, or gratecat_id.",
+    "description": "Returns a filtered collection of gullies from ve_gully. UD (urban drainage) schemas only \u2014 ve_gully does not exist on water-supply (WS) schemas. Filter by mapzones, sys_type, gully_type, or gratecat_id. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_gullies_features_gullies_get",
     "parameters": [
      {
@@ -6623,6 +6727,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
@@ -6976,7 +7093,7 @@
      "Features"
     ],
     "summary": "Get Gullies Geojson",
-    "description": "Returns gullies as a GeoJSON FeatureCollection, with the same filters as GET /features/gullies. UD schemas only.",
+    "description": "Returns gullies as a GeoJSON FeatureCollection, with the same filters as GET /features/gullies. UD schemas only. page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage.",
     "operationId": "get_gullies_geojson_features_gullies_geojson_get",
     "parameters": [
      {
@@ -7058,6 +7175,19 @@
        "default": 100
       },
       "description": "Maximum number of features to return"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Page",
+       "description": "1-based page number",
+       "default": 1
+      },
+      "description": "1-based page number"
      },
      {
       "name": "schema",
