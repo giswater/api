@@ -68,6 +68,7 @@ This service is versioned alongside the Giswater database. Use matching ranges t
 | 0.1 – 0.7              | 4.0 – 4.7                      | |
 | 0.8 – 1.6.x            | 4.8+                           | |
 | 1.7.x                  | 4.17+                          | `/features` needs refactored `gw_fct_getfeatures` (`featureType` / `outputFormat`). |
+| 1.10.x                 | 4.17.8+                        | `/features` `page` needs `OFFSET` in `gw_fct_getfeatures`. |
 
 When `GISWATER_DB_VERSION_CHECK=true`, tenant readiness (`GET ${API_ROOT}/v1/ready`) returns **503** if `{DB_SCHEMA}.sys_version` does not report a `giswater` version **≥** `GISWATER_DB_MIN_VERSION`. Set that variable to match the floor you want to enforce for each deployment.
 

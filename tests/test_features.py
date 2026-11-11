@@ -146,6 +146,33 @@ def test_unknown_filter_returns_422(client, default_params):
     assert response.status_code == 422
 
 
+def test_page_walks_nodes_by_id(client, default_params):
+    _require_getfeatures_refactor(client, default_params)
+    version = _db_version(client, default_params)
+    if version is None or _version_tuple(version) < (4, 18, 0):
+        pytest.skip(f"page requires Giswater DB >= 4.18.0 (got {version})")
+
+    def fetch(page: int) -> dict:
+        response = client.get(api("/features/nodes"), params={**default_params, "limit": 1, "page": page})
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["status"] == "Accepted"
+        return data["body"]["data"]
+
+    first = fetch(1)
+    second = fetch(2)
+    assert (first.get("pageInfo") or {}).get("orderBy") == "node_id"
+    assert (second.get("pageInfo") or {}).get("currentPage") == 2
+
+    rows_1 = first.get("features") or []
+    rows_2 = second.get("features") or []
+    if not rows_1 or not rows_2:
+        pytest.skip("Need at least two nodes to check page 2")
+    id_1 = int(rows_1[0]["node_id"])
+    id_2 = int(rows_2[0]["node_id"])
+    assert id_1 < id_2
+
+
 def test_limit_is_honoured(client, default_params):
     _require_getfeatures_refactor(client, default_params)
 

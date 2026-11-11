@@ -54,14 +54,17 @@ class FeaturesService:
         order_by: Optional[str] = None,
         order_type: Optional[Literal["ASC", "DESC"]] = None,
         limit: int = _DEFAULT_LIMIT,
+        page: int = 1,
     ) -> dict:
         coordinates_data = self._parse_coordinates(coordinates)
         filter_fields = filters.to_filter_fields()
 
-        page_info: dict = {"limit": limit}
-        if order_by:
-            page_info["orderBy"] = order_by
-            page_info["orderType"] = order_type or "ASC"
+        page_info = {
+            "page": page,
+            "limit": limit,
+            "orderBy": order_by or get_feature_id_column(feature_type),
+            "orderType": order_type or "ASC",
+        }
 
         extras: dict = {
             "featureType": get_feature_type_param(feature_type),
@@ -88,6 +91,7 @@ class FeaturesService:
         order_by: Optional[str] = None,
         order_type: Optional[Literal["ASC", "DESC"]] = None,
         limit: int = _DEFAULT_LIMIT,
+        page: int = 1,
     ) -> dict:
         return await self._list_features(
             feature_type,
@@ -97,6 +101,7 @@ class FeaturesService:
             order_by=order_by,
             order_type=order_type,
             limit=limit,
+            page=page,
         )
 
     async def list_features_geojson(
@@ -107,6 +112,7 @@ class FeaturesService:
         order_by: Optional[str] = None,
         order_type: Optional[Literal["ASC", "DESC"]] = None,
         limit: int = _DEFAULT_LIMIT,
+        page: int = 1,
     ) -> dict:
         return await self._list_features(
             feature_type,
@@ -116,6 +122,7 @@ class FeaturesService:
             order_by=order_by,
             order_type=order_type,
             limit=limit,
+            page=page,
         )
 
     async def _get_feature_by_id(

@@ -15,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from pydantic_core import PydanticUndefined
 
-from app.api.deps import CommonsDep, get_service_context
+from app.api.deps import CommonsDep, PAGE_QUERY, get_service_context
 from app.schemas.features.feature_models import (
     ArcFilters,
     ConnecFilters,
@@ -34,6 +34,9 @@ from app.services.features_service import FeaturesService
 router = APIRouter(prefix="/features", tags=["Features"])
 
 _LIMIT = Query(100, ge=1, le=5000, title="Limit", description="Maximum number of features to return")
+_PAGE_HELP = (
+    "page is 1-based. Omit orderBy and rows are ordered by the feature id. Read pages until currentPage >= lastPage."
+)
 _COORDINATES = Query(
     None,
     title="Coordinates",
@@ -47,7 +50,7 @@ _LINK_ID = Path(..., title="Link id", description="The unique identifier of the 
 _CONNEC_ID = Path(..., title="Connec id", description="The unique identifier of the connec", examples=["4001"])
 _GULLY_ID = Path(..., title="Gully id", description="The unique identifier of the gully", examples=["5001"])
 
-_RESERVED_QUERY_KEYS = frozenset({"schema", "coordinates", "orderBy", "orderType", "limit"})
+_RESERVED_QUERY_KEYS = frozenset({"schema", "coordinates", "orderBy", "orderType", "limit", "page"})
 
 NodeOrderBy = Literal["node_id", "code", "sys_type", "node_type", "nodecat_id", "dma_id", "sector_id", "state"]
 ArcOrderBy = Literal["arc_id", "code", "sys_type", "arc_type", "arccat_id", "dma_id", "sector_id", "state"]
@@ -124,7 +127,7 @@ GullyFiltersDep = Annotated[GullyFilters, Depends(make_filters_dependency(GullyF
     description=(
         "Returns a filtered collection of nodes from ve_node. "
         "Use sys_type for feature-class groups (e.g. VALVE) and node_type for subtypes "
-        "(e.g. CHECK_VALVE). Mapzone filters such as dma_id and sector_id are supported."
+        "(e.g. CHECK_VALVE). Mapzone filters such as dma_id and sector_id are supported. " + _PAGE_HELP
     ),
     response_model=GetFeaturesResponse,
     response_model_exclude_unset=True,
@@ -136,16 +139,19 @@ async def get_nodes(
     order_by: Optional[NodeOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features(
-        "node", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "node", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
 @router.get(
     "/nodes/geojson",
-    description=("Returns nodes as a GeoJSON FeatureCollection, with the same filters as GET /features/nodes."),
+    description=(
+        "Returns nodes as a GeoJSON FeatureCollection, with the same filters as GET /features/nodes. " + _PAGE_HELP
+    ),
     response_model=GetFeaturesGeoJsonResponse,
     response_model_exclude_unset=True,
 )
@@ -156,10 +162,11 @@ async def get_nodes_geojson(
     order_by: Optional[NodeOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features_geojson(
-        "node", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "node", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
@@ -209,7 +216,7 @@ async def get_node_geojson_by_id(
     "/arcs",
     description=(
         "Returns a filtered collection of arcs from ve_arc. "
-        "Filter by mapzones (dma_id, sector_id, …), sys_type, arc_type, or catalog fields."
+        "Filter by mapzones (dma_id, sector_id, …), sys_type, arc_type, or catalog fields. " + _PAGE_HELP
     ),
     response_model=GetFeaturesResponse,
     response_model_exclude_unset=True,
@@ -221,16 +228,19 @@ async def get_arcs(
     order_by: Optional[ArcOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features(
-        "arc", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "arc", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
 @router.get(
     "/arcs/geojson",
-    description=("Returns arcs as a GeoJSON FeatureCollection, with the same filters as GET /features/arcs."),
+    description=(
+        "Returns arcs as a GeoJSON FeatureCollection, with the same filters as GET /features/arcs. " + _PAGE_HELP
+    ),
     response_model=GetFeaturesGeoJsonResponse,
     response_model_exclude_unset=True,
 )
@@ -241,10 +251,11 @@ async def get_arcs_geojson(
     order_by: Optional[ArcOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features_geojson(
-        "arc", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "arc", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
@@ -292,7 +303,9 @@ async def get_arc_geojson_by_id(
 
 @router.get(
     "/links",
-    description=("Returns a filtered collection of links from ve_link. Filter by mapzones, sys_type, or link_type."),
+    description=(
+        "Returns a filtered collection of links from ve_link. Filter by mapzones, sys_type, or link_type. " + _PAGE_HELP
+    ),
     response_model=GetFeaturesResponse,
     response_model_exclude_unset=True,
 )
@@ -303,16 +316,19 @@ async def get_links(
     order_by: Optional[LinkOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features(
-        "link", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "link", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
 @router.get(
     "/links/geojson",
-    description=("Returns links as a GeoJSON FeatureCollection, with the same filters as GET /features/links."),
+    description=(
+        "Returns links as a GeoJSON FeatureCollection, with the same filters as GET /features/links. " + _PAGE_HELP
+    ),
     response_model=GetFeaturesGeoJsonResponse,
     response_model_exclude_unset=True,
 )
@@ -323,10 +339,11 @@ async def get_links_geojson(
     order_by: Optional[LinkOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features_geojson(
-        "link", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "link", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
@@ -376,7 +393,7 @@ async def get_link_geojson_by_id(
     "/connecs",
     description=(
         "Returns a filtered collection of connecs from ve_connec. "
-        "Filter by mapzones (dma_id, sector_id, …), sys_type, connec_type, or customer_code."
+        "Filter by mapzones (dma_id, sector_id, …), sys_type, connec_type, or customer_code. " + _PAGE_HELP
     ),
     response_model=GetFeaturesResponse,
     response_model_exclude_unset=True,
@@ -388,16 +405,19 @@ async def get_connecs(
     order_by: Optional[ConnecOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features(
-        "connec", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "connec", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
 @router.get(
     "/connecs/geojson",
-    description=("Returns connecs as a GeoJSON FeatureCollection, with the same filters as GET /features/connecs."),
+    description=(
+        "Returns connecs as a GeoJSON FeatureCollection, with the same filters as GET /features/connecs. " + _PAGE_HELP
+    ),
     response_model=GetFeaturesGeoJsonResponse,
     response_model_exclude_unset=True,
 )
@@ -408,10 +428,11 @@ async def get_connecs_geojson(
     order_by: Optional[ConnecOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features_geojson(
-        "connec", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "connec", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
@@ -462,7 +483,7 @@ async def get_connec_geojson_by_id(
     description=(
         "Returns a filtered collection of gullies from ve_gully. "
         "UD (urban drainage) schemas only — ve_gully does not exist on water-supply (WS) schemas. "
-        "Filter by mapzones, sys_type, gully_type, or gratecat_id."
+        "Filter by mapzones, sys_type, gully_type, or gratecat_id. " + _PAGE_HELP
     ),
     response_model=GetFeaturesResponse,
     response_model_exclude_unset=True,
@@ -474,10 +495,11 @@ async def get_gullies(
     order_by: Optional[GullyOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features(
-        "gully", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "gully", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 
@@ -485,7 +507,7 @@ async def get_gullies(
     "/gullies/geojson",
     description=(
         "Returns gullies as a GeoJSON FeatureCollection, with the same filters as GET /features/gullies. "
-        "UD schemas only."
+        "UD schemas only. " + _PAGE_HELP
     ),
     response_model=GetFeaturesGeoJsonResponse,
     response_model_exclude_unset=True,
@@ -497,10 +519,11 @@ async def get_gullies_geojson(
     order_by: Optional[GullyOrderBy] = Query(None, alias="orderBy", title="Order by"),
     order_type: Optional[Literal["ASC", "DESC"]] = _ORDER_TYPE,
     limit: int = _LIMIT,
+    page: int = PAGE_QUERY,
 ):
     ctx = get_service_context(commons)
     return await FeaturesService(ctx).list_features_geojson(
-        "gully", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit
+        "gully", filters, coordinates=coordinates, order_by=order_by, order_type=order_type, limit=limit, page=page
     )
 
 

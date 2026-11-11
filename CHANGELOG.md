@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`page` on `GET /features` collections** (nodes, arcs, links, connecs, gullies, and their GeoJSON routes). 1-based. Omit `orderBy` and rows are ordered by the feature id. Walk pages until `currentPage` >= `lastPage`. `page` > 1 needs Giswater DB ≥ 4.18.0 (`OFFSET` in `gw_fct_getfeatures`).
+
 ### Changed
 
+- **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.8**. Compatibility table: **1.10.x → Giswater DB ≥ 4.17.8**.
+- **`GET /features` collections** order by the feature id when `orderBy` is omitted. `lastPage` is the last 1-based page (`ceil(total / limit)`).
 - API docs (`${API_ROOT}/v1/docs` and `${API_ROOT}/admin/docs`) use Scalar instead of Swagger UI. Tag groups start collapsed. The sidebar search covers endpoints, tags, and models. Schemas are in the Models section.
 
 ### Deprecated

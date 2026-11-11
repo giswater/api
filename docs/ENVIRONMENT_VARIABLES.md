@@ -64,7 +64,7 @@ Used only when evaluating tenant **`GET ${API_ROOT}/v1/ready`** (after the datab
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `GISWATER_DB_VERSION_CHECK` | `false` | When `true`, readiness compares `{DB_SCHEMA}.sys_version.giswater` to `GISWATER_DB_MIN_VERSION`. Returns **503** if missing or below minimum. |
-| `GISWATER_DB_MIN_VERSION` | `4.17.0` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Default matches [README compatibility](../README.md#compatibility). Override per deployment based on active endpoints. |
+| `GISWATER_DB_MIN_VERSION` | `4.17.8` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Default matches [README compatibility](../README.md#compatibility). Override per deployment based on active endpoints. |
 
 ### MCP
 
