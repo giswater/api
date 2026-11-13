@@ -3,7 +3,7 @@
  "info": {
   "title": "Giswater API",
   "description": "API for interacting with a Giswater database.\n\nAuthentication is configured per tenant and is one of: no authentication, HTTP Basic, or Keycloak (OAuth2 bearer tokens). This reference lists every tenant endpoint and does not declare security schemes.",
-  "version": "1.10.0"
+  "version": "1.10.1"
  },
  "servers": [
   {
