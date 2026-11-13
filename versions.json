@@ -5,10 +5,15 @@
     "url": "specs/main.json"
   },
   {
-    "title": "v1.10.0 (latest)",
-    "slug": "v1.10.0",
-    "url": "specs/v1.10.0.json",
+    "title": "v1.10.1 (latest)",
+    "slug": "v1.10.1",
+    "url": "specs/v1.10.1.json",
     "default": true
+  },
+  {
+    "title": "v1.10.0",
+    "slug": "v1.10.0",
+    "url": "specs/v1.10.0.json"
   },
   {
     "title": "v1.9.1",
