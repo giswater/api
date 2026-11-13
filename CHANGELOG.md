@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Production `celery-worker` and `celery-beat` drop to the non-root `app` user after fixing volume permissions (same entrypoint as `app`), so Celery no longer warns about running with superuser privileges.
+
 ## [1.10.1] - 2026-11-13
 
 ### Fixed
