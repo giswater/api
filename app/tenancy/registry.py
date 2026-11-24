@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from fastapi_keycloak import FastAPIKeycloak
 
-from ..core.config import CAPABILITIES, TenantSettings, global_settings, load_tenant_settings
+from ..core.config import API_TOGGLES, CAPABILITIES, TenantSettings, global_settings, load_tenant_settings
 from ..db.manager import DatabaseManager
 from ..auth.keycloak import build_idp
 
@@ -92,18 +92,7 @@ def _format_value(value) -> str:
 def serialize_tenant_settings(settings: TenantSettings) -> str:
     """Produce a `.env` body for a TenantSettings (atomic-write friendly)."""
     fields = (
-        ("API_BASIC", settings.api_basic),
-        ("API_PROFILE", settings.api_profile),
-        ("API_FLOW", settings.api_flow),
-        ("API_MINCUT", settings.api_mincut),
-        ("API_WATER_BALANCE", settings.api_water_balance),
-        ("API_MAPZONES", settings.api_mapzones),
-        ("API_ROUTING", settings.api_routing),
-        ("API_CRM", settings.api_crm),
-        ("API_EPA", settings.api_epa),
-        ("API_FEATURES", settings.api_features),
-        ("API_MCP", settings.api_mcp),
-        ("API_CMMS", settings.api_cmms),
+        *((field.name.upper(), getattr(settings, field.name)) for field in API_TOGGLES),
         ("FILES_DIR", settings.files_dir),
         ("FILES_MAX_UPLOAD_MB", settings.files_max_upload_mb),
         ("FILES_PUBLIC_URL", settings.files_public_url),
