@@ -7,7 +7,7 @@
 | Status |  [![Last commit](https://img.shields.io/github/last-commit/Giswater/giswater-api)](https://github.com/Giswater/giswater-api/commits/main) [![Commit activity](https://img.shields.io/github/commit-activity/m/Giswater/giswater-api)](https://github.com/Giswater/giswater-api/graphs/commit-activity) |
 | Meta | [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-orange.svg)](./LICENSE) |
 
-A lightweight, modular FastAPI application with **Swagger UI**, **Docker support**, **Keycloak authentication**, and **Gunicorn + Uvicorn** for production.
+A lightweight, modular FastAPI application with **API docs**, **Docker support**, **Keycloak authentication**, and **Gunicorn + Uvicorn** for production.
 
 ## 📚 Table of Contents
 
@@ -36,7 +36,7 @@ Giswater API exposes a clean HTTP surface to query and operate a Giswater databa
 **How it works**
 - Each route validates input with Pydantic models, builds a standard payload, and calls Postgres procedures in the Giswater schema.
 - Modules are toggled via environment variables, so you only expose the domains you need (Basic, OM, CRM, Routing, Water Balance).
-- Optional Keycloak authentication protects routes while keeping Swagger/OpenAPI usable.
+- Optional Keycloak authentication protects routes while keeping the docs UI usable.
 
 **Why it is useful**
 - Centralizes complex GIS/business logic behind stable HTTP endpoints.
@@ -44,7 +44,7 @@ Giswater API exposes a clean HTTP surface to query and operate a Giswater databa
 - Keeps API surface modular and controllable per deployment.
 
 **How to use it**
-- Base path: `${API_ROOT}/v1` (default `/giswater/v1`; Swagger at `${API_ROOT}/v1/docs` on each tenant host). Platform admin API: `${API_ROOT}/admin` (Swagger at `${API_ROOT}/admin/docs` on the apex host only). Override `API_ROOT` to remount everything (e.g. `/gw-api` for legacy URLs).
+- Base path: `${API_ROOT}/v1` (default `/giswater/v1`; docs at `${API_ROOT}/v1/docs` on each tenant host). Platform admin API: `${API_ROOT}/admin` (docs at `${API_ROOT}/admin/docs` on the apex host only). Override `API_ROOT` to remount everything (e.g. `/gw-api` for legacy URLs).
 - Deploy behind nginx on the host: see `deploy/nginx.conf.example`. The compose file binds the app to `127.0.0.1:8000`.
 - Tenants are resolved from the leftmost host label of `<tenant>.<BASE_DOMAIN>` (e.g. `acme.bgeo360.com`).
 - Each tenant owns its own DB pool, Keycloak IDP, file/DB logger, and `API_*` toggles via `config/tenants/<tenant>.env`.
@@ -68,6 +68,7 @@ This service is versioned alongside the Giswater database. Use matching ranges t
 | 0.1 – 0.7              | 4.0 – 4.7                      | |
 | 0.8 – 1.6.x            | 4.8+                           | |
 | 1.7.x                  | 4.17+                          | `/features` needs refactored `gw_fct_getfeatures` (`featureType` / `outputFormat`). |
+| 1.10.x                 | 4.17.8+                        | `/features` `page` needs `OFFSET` in `gw_fct_getfeatures`. |
 
 When `GISWATER_DB_VERSION_CHECK=true`, tenant readiness (`GET ${API_ROOT}/v1/ready`) returns **503** if `{DB_SCHEMA}.sys_version` does not report a `giswater` version **≥** `GISWATER_DB_MIN_VERSION`. Set that variable to match the floor you want to enforce for each deployment.
 
@@ -258,7 +259,7 @@ When disabled (`AUTH_MODE=none`), endpoints accept anonymous requests for that t
 
 `/admin/*` uses a separate **platform** Keycloak realm (`PLATFORM_KEYCLOAK_*`) plus HTTP Basic, with `platform-admin` as the required role.
 
-> **Swagger UI** (`${API_ROOT}/v1/docs` on each tenant host) shows an **Authorize** button whose schemes depend on `AUTH_MODE`:
+> **Docs UI** (`${API_ROOT}/v1/docs` on each tenant host) shows an **Authorize** button whose schemes depend on `AUTH_MODE`:
 > - `none` — `adminBasic` only (platform admin credentials for `/logs*`).
 > - `basic` — `tenantBasic` + `adminBasic`.
 > - `keycloak` — `keycloakPassword` (username/password inline) and `keycloakAuthCode` (redirect to Keycloak login), plus `adminBasic`. Both OAuth flows use `KEYCLOAK_CLIENT_ID` via the server-side `POST /auth/token` proxy so the client secret never reaches the browser. Clients may also obtain tokens directly from Keycloak and send `Authorization: Bearer ...`.
@@ -303,7 +304,7 @@ The override enables:
 - `uvicorn --reload`
 - `DEV_ALLOW_TENANT_HEADER=true`
 
-### Local Keycloak (Swagger OAuth2)
+### Local Keycloak (docs OAuth2)
 
 ```bash
 docker compose --profile keycloak up -d keycloak

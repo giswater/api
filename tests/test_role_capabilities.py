@@ -1,14 +1,16 @@
 """Capability role names and require_capability."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 
+import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth.schemas import ApiUser
 from app.auth.session import get_current_user, require_capability
 from app.core.config import CAPABILITIES, TenantSettings, _build_tenant, normalize_role_names
-from app.schemas.admin import DbSettingsIn, TenantIn, TenantOut, build_tenant_settings_from_input
+from app.schemas.admin import DbSettingsIn, FilesSettingsIn, TenantIn, TenantOut, build_tenant_settings_from_input
 from app.tenancy.registry import serialize_tenant_settings
 
 
@@ -130,9 +132,65 @@ def test_admin_round_trip_roles():
     assert "ROLE_PLAN=planning" in body
     assert "ROLE_SYSTEM=system" in body
 
+    assert created.files_dir == "data/files"
+    assert created.files_public_url is None
+    assert created.files_max_upload_mb == 100
+
+    with_files = replace(
+        created,
+        files_dir="/data/acme",
+        files_public_url="https://files.example/giswater/files",
+        files_max_upload_mb=50,
+    )
+    kept_files = build_tenant_settings_from_input(TenantIn(db=DbSettingsIn(password="secret")), existing=with_files)
+    assert kept_files.files_dir == "/data/acme"
+    assert kept_files.files_public_url == "https://files.example/giswater/files"
+    assert kept_files.files_max_upload_mb == 50
+    serialized = serialize_tenant_settings(with_files)
+    assert "FILES_DIR=/data/acme" in serialized
+    assert "FILES_PUBLIC_URL=https://files.example/giswater/files" in serialized
+    assert "FILES_MAX_UPLOAD_MB=50" in serialized
+
+    partial = build_tenant_settings_from_input(
+        TenantIn(db=DbSettingsIn(password="secret"), files=FilesSettingsIn(max_upload_mb=10)),
+        existing=with_files,
+    )
+    assert partial.files_max_upload_mb == 10
+    assert partial.files_dir == "/data/acme"
+    assert partial.files_public_url == with_files.files_public_url
+
+    cleared = build_tenant_settings_from_input(
+        TenantIn(db=DbSettingsIn(password="secret"), files=FilesSettingsIn(public_url="")),
+        existing=with_files,
+    )
+    assert cleared.files_public_url is None
+    assert cleared.files_dir == "/data/acme"
+    assert "FILES_PUBLIC_URL=" not in serialize_tenant_settings(cleared)
+
+    cleared_null = build_tenant_settings_from_input(
+        TenantIn(db=DbSettingsIn(password="secret"), files=FilesSettingsIn(public_url=None)),
+        existing=with_files,
+    )
+    assert cleared_null.files_public_url is None
+
+    with pytest.raises(ValueError, match="FILES_DIR"):
+        build_tenant_settings_from_input(
+            TenantIn(db=DbSettingsIn(password="secret"), files=FilesSettingsIn(dir="  ")),
+            existing=with_files,
+        )
+    with pytest.raises(ValueError, match="FILES_MAX_UPLOAD_MB"):
+        build_tenant_settings_from_input(
+            TenantIn(db=DbSettingsIn(password="secret"), files=FilesSettingsIn(max_upload_mb=0)),
+            existing=with_files,
+        )
+
     tenant = SimpleNamespace(id="acme", settings=created, db_manager=SimpleNamespace(connection_pool=None))
-    assert TenantOut.from_tenant(tenant).roles == {  # type: ignore[arg-type]
+    body = TenantOut.from_tenant(tenant)  # type: ignore[arg-type]
+    assert body.roles == {
         **_default_roles(),
         "epa": "epa-role",
         "plan": "planning",
     }
+    assert body.files.dir == "data/files"
+    assert body.files.public_url is None
+    assert body.files.max_upload_mb == 100

@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 import pytest
 from psycopg import OperationalError
+from psycopg_pool import AsyncConnectionPool
 
 from app.core.config import TenantSettings
 from app.db.manager import DatabaseManager
@@ -62,11 +63,35 @@ def test_init_conn_pool_registers_reset_callback():
         fake_pool.open = AsyncMock()
 
         with patch("app.db.manager.AsyncConnectionPool", return_value=fake_pool) as pool_cls:
+            pool_cls.check_connection = AsyncConnectionPool.check_connection
             await mgr.init_conn_pool()
 
         assert mgr.connection_pool is fake_pool
         kwargs = pool_cls.call_args.kwargs
         assert kwargs["reset"] is DatabaseManager._reset_pooled_connection
+        assert kwargs["check"] is AsyncConnectionPool.check_connection
+        assert kwargs["kwargs"]["keepalives_idle"] == 60
+        assert kwargs["kwargs"]["tcp_user_timeout"] == 120000
+
+    asyncio.run(_run())
+
+
+def test_init_conn_pool_keeps_dsn_keepalive_overrides():
+    async def _run():
+        mgr = DatabaseManager(
+            TenantSettings(database_url="postgresql://postgres:postgres@localhost/postgres?keepalives_idle=5"),
+            "main",
+        )
+        fake_pool = MagicMock()
+        fake_pool.open = AsyncMock()
+
+        with patch("app.db.manager.AsyncConnectionPool", return_value=fake_pool) as pool_cls:
+            pool_cls.check_connection = AsyncConnectionPool.check_connection
+            await mgr.init_conn_pool()
+
+        passed = pool_cls.call_args.kwargs["kwargs"]
+        assert "keepalives_idle" not in passed
+        assert passed["keepalives"] == 1
 
     asyncio.run(_run())
 

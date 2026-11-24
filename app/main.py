@@ -13,10 +13,10 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from scalar_fastapi import AgentScalarConfig, get_scalar_api_reference
 from starlette.routing import BaseRoute
 
 from .api.exception_handlers import register_exception_handlers
@@ -28,7 +28,7 @@ from .api.v2.router import tenant_openapi_routes as tenant_openapi_routes_v2
 from .auth import verify_admin
 from .core.config import global_settings
 from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX_V1, TENANT_PREFIX_V2
-from .core.openapi import apply_tenant_security
+from .core.openapi import apply_tenant_security, scalar_authentication
 from .middleware.request_logging import request_logging_middleware
 from .schemas.common import GwErrorResponse
 from .tenancy import state
@@ -42,12 +42,26 @@ from .mcp import runtime as mcp_runtime
 TITLE = "Giswater API"
 VERSION = pkg_version("giswater-api")
 DESCRIPTION = "API for interacting with a Giswater database."
+SCALAR_JS_URL = "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.77.0"
 logger = logging.getLogger(__name__)
 
 _TENANT_RESPONSES = {
     500: {"model": GwErrorResponse, "description": "Database function error"},
     503: {"model": GwErrorResponse, "description": "Database unavailable"},
 }
+
+
+def _docs_html(openapi_url: str, title: str, authentication: dict | None = None):
+    return get_scalar_api_reference(
+        openapi_url=openapi_url,
+        title=title,
+        scalar_js_url=SCALAR_JS_URL,
+        scalar_favicon_url=f"{STATIC_PREFIX}/favicon.ico",
+        authentication=authentication,
+        persist_auth=True,
+        telemetry=False,
+        agent=AgentScalarConfig(disabled=True),
+    )
 
 
 def _register_health_route(app: FastAPI, path: str = "/health") -> None:
@@ -101,25 +115,16 @@ def _register_tenant_meta_routes(
 
     @app.get("/docs", include_in_schema=False)
     async def tenant_docs(request: Request):
-        tenant: Tenant = request.state.tenant
-        init_oauth = None
-        if tenant.settings.auth_mode == "keycloak":
-            init_oauth = {
-                "clientId": tenant.settings.keycloak_client_id,
-                "usePkceWithAuthorizationCodeGrant": True,
-                "scopes": "openid profile email",
-            }
-        return get_swagger_ui_html(
-            openapi_url=f"{prefix}/openapi.json",
-            title=f"{TITLE} - docs",
-            oauth2_redirect_url=f"{prefix}/docs/oauth2-redirect",
-            init_oauth=init_oauth,
-            swagger_ui_parameters={"persistAuthorization": True},
+        return _docs_html(
+            f"{prefix}/openapi.json",
+            f"{TITLE} - docs",
+            scalar_authentication(request.state.tenant, str(request.url_for("tenant_docs_oauth2_redirect"))),
         )
 
+    # DEPRECATED #44: landing page for the Swagger-era Keycloak redirect URI; remove in 2.0.0
     @app.get("/docs/oauth2-redirect", include_in_schema=False)
     async def tenant_docs_oauth2_redirect():
-        return get_swagger_ui_oauth2_redirect_html()
+        return HTMLResponse("<!doctype html>")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon():
@@ -182,7 +187,7 @@ admin_app = FastAPI(
     title=f"{TITLE} - Admin",
     version=VERSION,
     description="Platform admin API",
-    docs_url="/docs",
+    docs_url=None,
     openapi_url="/openapi.json",
     dependencies=[Depends(verify_admin)],
     responses={
@@ -191,6 +196,14 @@ admin_app = FastAPI(
     },
 )
 register_admin(admin_app)
+
+
+async def admin_docs(_request: Request):
+    return _docs_html(f"{ADMIN_PREFIX}/openapi.json", f"{TITLE} - Admin")
+
+
+# Plain route, same as FastAPI's built-in docs: stays outside verify_admin.
+admin_app.add_route("/docs", admin_docs, include_in_schema=False)
 
 parent.mount(ADMIN_PREFIX, admin_app)
 parent.mount(TENANT_PREFIX_V1, tenant_app_v1)

@@ -31,7 +31,7 @@ services:
     volumes:
       - ./config:/app/config:z
       - giswater_api_logs:/app/logs
-      - giswater_api_cmms:/app/data/cmms
+      - giswater_api_files:/app/data/files
     extra_hosts:
       # Dev only: lets the container reach Postgres on the host.
       # Docker Desktop already supports host.docker.internal natively.
@@ -105,7 +105,7 @@ services:
       api-network:
         ipv4_address: 172.21.1.53
 
-  # Local Keycloak for Swagger OAuth2 (password + auth-code). Optional:
+  # Local Keycloak for docs OAuth2 (password + auth-code). Optional:
   #   podman compose --profile keycloak up -d keycloak
   # See docker/keycloak/README.md
   keycloak:
@@ -141,4 +141,4 @@ networks:
 
 volumes:
   giswater_api_logs:
-  giswater_api_cmms:
+  giswater_api_files:

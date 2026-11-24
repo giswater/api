@@ -16,6 +16,8 @@ except ValueError:
     workers = max(1, min(2 * cpu + 1, 8))
 
 worker_class = "uvicorn.workers.UvicornWorker"
+# Trust X-Forwarded-* from the Docker bridge. The app is only published on 127.0.0.1.
+forwarded_allow_ips = "*"
 timeout = int(os.environ.get("GUNICORN_TIMEOUT", "120"))
 graceful_timeout = int(os.environ.get("GUNICORN_GRACEFUL_TIMEOUT", "30"))
 keepalive = int(os.environ.get("GUNICORN_KEEPALIVE", "5"))

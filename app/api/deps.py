@@ -17,6 +17,9 @@ from app.tenancy.registry import Tenant
 from app.db.context import DB_IDENTITY_CTX, DbIdentity
 
 
+PAGE_QUERY = Query(1, ge=1, title="Page", description="1-based page number")
+
+
 def get_service_context(commons: dict) -> ServiceContext:
     """Build a service context from route dependencies."""
     return service_context_from_commons(commons)

@@ -19,7 +19,7 @@ os.environ.setdefault("ADMIN_USER", "admin")
 os.environ.setdefault("ADMIN_PASSWORD", "admin")
 os.environ.setdefault("LOG_DB_ENABLED", "false")
 os.environ.setdefault("GISWATER_DB_VERSION_CHECK", "false")
-os.environ.setdefault("CMMS_STORAGE_DIR", tempfile.mkdtemp(prefix="giswater-cmms-"))
+os.environ["FILES_DIR"] = tempfile.mkdtemp(prefix="giswater-files-")
 
 
 # Render the 'test' tenant from env vars into a tmp dir so DB_HOST/DB_PORT/etc.
@@ -55,7 +55,8 @@ def _materialize_tenants_dir() -> str:
         "API_BASIC=true\nAPI_PROFILE=true\nAPI_FLOW=true\nAPI_MINCUT=true\n"
         "API_WATER_BALANCE=true\nAPI_MAPZONES=true\nAPI_ROUTING=true\n"
         "API_CRM=true\nAPI_EPA=true\nAPI_FEATURES=true\nAPI_CMMS=true\n"
-        "CMMS_MAX_UPLOAD_MB=2\n"
+        f"FILES_DIR={os.environ['FILES_DIR']}\n"
+        "FILES_MAX_UPLOAD_MB=2\n"
     )
     (tmp / "test.env").write_text(flags_all + "API_MCP=true\n" + common_db + "AUTH_MODE=none\n")
     (tmp / "isolated.env").write_text(

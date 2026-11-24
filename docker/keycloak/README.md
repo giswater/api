@@ -1,6 +1,6 @@
-# Local Keycloak (Swagger OAuth2)
+# Local Keycloak (docs OAuth2)
 
-Dev-only IdP so the Swagger **Authorize** buttons work (`keycloakPassword` + `keycloakAuthCode`).
+Dev-only IdP so the docs **Authorize** buttons work (`keycloakPassword` + `keycloakAuthCode`).
 
 ## Start
 
@@ -34,14 +34,14 @@ Reload the tenant (restart the app, or `POST ${API_ROOT}/admin/tenants/<id>/relo
 
 `auth.localhost` is intentional: browsers resolve `*.localhost` → `127.0.0.1` (published `:8080`), while the API container resolves the same name via the compose network alias on the Keycloak service.
 
-## Swagger
+## Docs
 
 1. Open `${API_ROOT}/v1/docs` on a tenant host (or `localhost` with `DEV_ALLOW_TENANT_HEADER=true` + `X-Tenant-ID`).
 2. **Authorize** → either:
    - **keycloakPassword**: username `test`, password `test` (client id pre-filled; leave client secret empty — the API proxy injects it).
    - **keycloakAuthCode**: redirects to Keycloak login (`test` / `test`).
 
-Auth-code uses `http://<host>:8000/.../docs/oauth2-redirect`. Keycloak only treats a **trailing** `*` as a wildcard (prefix match); `http://*.bgeo360.localhost:...` is a literal and will not match `acme.bgeo360.localhost`. The imported client allows `http://*` for local multi-tenant hosts. In real IdPs, register the exact tenant URL(s).
+Auth-code redirects back to `http://<host>:8000/.../docs/oauth2-redirect` (`DEPRECATED #44`; 2.0.0 moves it to `.../docs`). Keycloak only treats a **trailing** `*` as a wildcard (prefix match); `http://*.bgeo360.localhost:...` is a literal and will not match `acme.bgeo360.localhost`. The imported client allows `http://*` for local multi-tenant hosts. In real IdPs, register the exact tenant URL(s).
 
 ## Worker client (jobs)
 

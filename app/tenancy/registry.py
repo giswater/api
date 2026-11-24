@@ -104,7 +104,9 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("API_FEATURES", settings.api_features),
         ("API_MCP", settings.api_mcp),
         ("API_CMMS", settings.api_cmms),
-        ("CMMS_MAX_UPLOAD_MB", settings.cmms_max_upload_mb),
+        ("FILES_DIR", settings.files_dir),
+        ("FILES_MAX_UPLOAD_MB", settings.files_max_upload_mb),
+        ("FILES_PUBLIC_URL", settings.files_public_url),
         (
             "ENABLED_PLUGINS",
             ",".join(sorted(settings.enabled_plugins)) if settings.enabled_plugins else None,
@@ -137,6 +139,7 @@ def serialize_tenant_settings(settings: TenantSettings) -> str:
         ("KEYCLOAK_CALLBACK_URI", settings.keycloak_callback_uri),
         ("WORKER_KEYCLOAK_CLIENT_ID", settings.worker_keycloak_client_id),
         ("WORKER_KEYCLOAK_CLIENT_SECRET", settings.worker_keycloak_client_secret),
+        ("KEYCLOAK_USERNAME_CLAIM", settings.keycloak_username_claim),
     )
     lines = [f"{key}={_format_value(value)}" for key, value in fields if value is not None]
     return "\n".join(lines) + "\n"

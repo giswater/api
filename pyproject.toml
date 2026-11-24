@@ -1,6 +1,6 @@
 [project]
 name = "giswater-api"
-version = "1.8.1"
+version = "1.10.1"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.135.2",
@@ -25,7 +25,8 @@ dependencies = [
     "click==8.2.1",
     "celery>=5.4.0",
     "redis>=5.0.0",
-    "fastmcp==4.0.3",
+    "fastmcp==4.1.2",
+    "scalar-fastapi==1.9.1",
 ]
 
 [project.scripts]

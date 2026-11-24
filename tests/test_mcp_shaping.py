@@ -261,13 +261,13 @@ def test_refuse_incompatible_project_type():
 
     spec = ToolSpec(fn=list_mincuts, feature=None, annotations={}, project_types=frozenset({"WS"}))
     with pytest.raises(ToolError, match="WS-only"):
-        refuse_incompatible({"schema": "ud_x", "giswater": "4.17.0", "project_type": "UD"}, spec)
+        refuse_incompatible({"schema": "ud_x", "giswater": "4.18.0", "project_type": "UD"}, spec)
 
 
 def test_refuse_incompatible_accepts_current():
     from app.mcp.client import refuse_incompatible
 
-    refuse_incompatible({"schema": "ws_x", "giswater": "4.17.0", "project_type": "WS"}, None)
+    refuse_incompatible({"schema": "ws_x", "giswater": "4.18.0", "project_type": "WS"}, None)
 
 
 def test_failed_text_prefers_msgerr():

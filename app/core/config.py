@@ -43,6 +43,11 @@ def _to_int(value, default: int) -> int:
         return default
 
 
+def normalize_files_public_url(value: str | None) -> str | None:
+    """Public file base. Blank is unset. A trailing slash is stripped."""
+    return (value or "").strip().rstrip("/") or None
+
+
 def _to_float(value, default: float) -> float:
     if value is None or value == "":
         return default
@@ -151,7 +156,7 @@ class GlobalSettings:
 
     # DB compatibility (optional readiness gate; see GISWATER_DB_* env vars)
     giswater_db_version_check: bool = False
-    giswater_db_min_version: str = "4.17.0"
+    giswater_db_min_version: str = "4.17.8"
 
     # Alembic migrations for the API-owned `gwapi` schema.
     # When True, `alembic upgrade head` runs per tenant on load. Set False to
@@ -162,9 +167,6 @@ class GlobalSettings:
     # MCP (per-tenant Streamable HTTP at ${API_ROOT}/v1/mcp/)
     mcp_enabled: bool = True
     mcp_timeout: float = 60.0
-
-    # CMMS attachment files (per tenant subdirectory). Relative paths are stored in cmms.attachment.
-    cmms_storage_dir: str = "data/cmms"
 
     # Legacy aliases (kept for the duration of the multi-tenant migration).
     @property
@@ -229,7 +231,11 @@ class TenantSettings:
     api_features: bool = False
     api_mcp: bool = False
     api_cmms: bool = False
-    cmms_max_upload_mb: int = 100
+    # Uploaded files. The API writes {dir}/{tenant_id}/{feature}/{id}/.
+    files_dir: str = "data/files"
+    files_max_upload_mb: int = 100
+    # Public base for stored path values. Empty stores a relative key.
+    files_public_url: str | None = None
     enabled_plugins: frozenset[str] = frozenset()
 
     # Database
@@ -263,6 +269,8 @@ class TenantSettings:
     # Background jobs. Unset falls back to KEYCLOAK_CLIENT_*.
     worker_keycloak_client_id: str | None = None
     worker_keycloak_client_secret: str | None = None
+    # JWT claim used as the DB role / preferred username. Missing claim falls back to preferred_username, then sub.
+    keycloak_username_claim: str = "preferred_username"
     # Capability role names. Comma-separated names are OR. Empty falls back to the default.
     role_basic: str = "basic"
     role_om: str = "om"
@@ -295,6 +303,10 @@ class TenantSettings:
                 raise ValueError(f"Keycloak configuration is incomplete: {', '.join(missing)}")
         if self.auth_mode not in AUTH_MODES:
             raise ValueError(f"Invalid AUTH_MODE '{self.auth_mode}'")
+        if not self.files_dir.strip():
+            raise ValueError("FILES_DIR is empty")
+        if self.files_max_upload_mb < 1:
+            raise ValueError("FILES_MAX_UPLOAD_MB must be at least 1")
 
     def plugin_enabled(self, plugin_id: str) -> bool:
         return plugin_id in self.enabled_plugins
@@ -361,12 +373,11 @@ def _build_global(env: Mapping[str, str | None]) -> GlobalSettings:
         platform_keycloak_client_id=env.get("PLATFORM_KEYCLOAK_CLIENT_ID") or None,
         platform_keycloak_client_secret=env.get("PLATFORM_KEYCLOAK_CLIENT_SECRET") or None,
         giswater_db_version_check=_to_bool(env.get("GISWATER_DB_VERSION_CHECK"), False),
-        giswater_db_min_version=(env.get("GISWATER_DB_MIN_VERSION") or "4.17.0"),
+        giswater_db_min_version=(env.get("GISWATER_DB_MIN_VERSION") or "4.18.0"),
         db_auto_migrate=_to_bool(env.get("DB_AUTO_MIGRATE"), True),
         db_migrate_timeout=_to_float(env.get("DB_MIGRATE_TIMEOUT"), 30.0),
         mcp_enabled=_to_bool(env.get("MCP_ENABLED"), True),
         mcp_timeout=_to_float(env.get("MCP_TIMEOUT"), 60.0),
-        cmms_storage_dir=(env.get("CMMS_STORAGE_DIR") or "data/cmms"),
     )
 
 
@@ -384,7 +395,9 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         api_features=_to_bool(env.get("API_FEATURES"), False),
         api_mcp=_to_bool(env.get("API_MCP"), False),
         api_cmms=_to_bool(env.get("API_CMMS"), False),
-        cmms_max_upload_mb=_to_int(env.get("CMMS_MAX_UPLOAD_MB"), 100),
+        files_dir=((env.get("FILES_DIR") or "").strip() or "data/files"),
+        files_max_upload_mb=_to_int(env.get("FILES_MAX_UPLOAD_MB"), 100),
+        files_public_url=normalize_files_public_url(env.get("FILES_PUBLIC_URL")),
         enabled_plugins=_to_plugin_list(env.get("ENABLED_PLUGINS")),
         db_host=(env.get("DB_HOST") or "localhost"),
         db_port=(env.get("DB_PORT") or "5432"),
@@ -411,6 +424,8 @@ def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
         keycloak_callback_uri=env.get("KEYCLOAK_CALLBACK_URI") or None,
         worker_keycloak_client_id=env.get("WORKER_KEYCLOAK_CLIENT_ID") or None,
         worker_keycloak_client_secret=env.get("WORKER_KEYCLOAK_CLIENT_SECRET") or None,
+        keycloak_username_claim=(env.get("KEYCLOAK_USERNAME_CLAIM") or "preferred_username").strip()
+        or "preferred_username",
         **{cap.field: normalize_role_names(env.get(cap.env), default=cap.default) for cap in CAPABILITIES},
     )
 

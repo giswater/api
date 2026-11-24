@@ -36,6 +36,8 @@
       "redirectUris": [
         "http://localhost:8000/giswater/v1/docs/oauth2-redirect",
         "http://127.0.0.1:8000/giswater/v1/docs/oauth2-redirect",
+        "http://localhost:8000/giswater/v1/docs",
+        "http://127.0.0.1:8000/giswater/v1/docs",
         "http://localhost:8000/*",
         "http://127.0.0.1:8000/*",
         "http://*"

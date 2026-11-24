@@ -8,6 +8,7 @@ or (at your option) any later version.
 import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
+from psycopg.conninfo import conninfo_to_dict
 from psycopg_pool import AsyncConnectionPool
 import psycopg
 from fastapi import HTTPException
@@ -16,6 +17,18 @@ from ..core.config import TenantSettings
 from ..core.exceptions import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
+
+# Detect a peer that vanished without a RST (NAT, firewall, proxy) within ~110s,
+# and cap a hung write — including the checkout ping — at 120s. libpq defaults
+# wait 2h. Keys already present in DATABASE_URL are left alone: pool kwargs
+# override the conninfo string.
+_KEEPALIVE_DEFAULTS = {
+    "keepalives": 1,
+    "keepalives_idle": 60,
+    "keepalives_interval": 10,
+    "keepalives_count": 5,
+    "tcp_user_timeout": 120000,
+}
 
 
 class DatabaseManager:
@@ -64,13 +77,16 @@ class DatabaseManager:
     async def init_conn_pool(self):
         """Initialize the async connection pool."""
         try:
+            dsn_keys = conninfo_to_dict(self.database_url)
             self.connection_pool = AsyncConnectionPool(
                 self.database_url,
+                kwargs={k: v for k, v in _KEEPALIVE_DEFAULTS.items() if k not in dsn_keys},
                 min_size=self.settings.db_pool_min_size,
                 max_size=self.settings.db_pool_max_size,
                 timeout=self.settings.db_pool_timeout,
                 max_waiting=self.settings.db_pool_max_waiting,
                 max_idle=self.settings.db_pool_max_idle,
+                check=AsyncConnectionPool.check_connection,
                 reset=self._reset_pooled_connection,
                 open=False,
             )

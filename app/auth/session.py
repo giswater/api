@@ -52,7 +52,7 @@ def _roles_from_jwt_payload(payload: dict, client_id: str | None) -> frozenset[s
     return frozenset(roles)
 
 
-def verify_token(token: str, idp: FastAPIKeycloak) -> ApiUser:
+def verify_token(token: str, idp: FastAPIKeycloak, username_claim: str = "preferred_username") -> ApiUser:
     """Decode a tenant-issued JWT against the tenant's Keycloak public key."""
     try:
         payload = jwt.decode(
@@ -64,7 +64,8 @@ def verify_token(token: str, idp: FastAPIKeycloak) -> ApiUser:
     except jwt.PyJWTError as exc:
         logger.warning("Tenant token rejected: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid token") from exc
-    username = payload.get("preferred_username") or payload.get("sub") or "unknown"
+    claim = (username_claim or "preferred_username").strip() or "preferred_username"
+    username = payload.get(claim) or payload.get("preferred_username") or payload.get("sub") or "unknown"
     return ApiUser(
         sub=str(payload.get("sub") or username),
         preferred_username=str(username),
@@ -93,7 +94,7 @@ async def get_current_user(
         token = extract_bearer_token(request)
         if not token:
             raise HTTPException(status_code=401, detail="Missing bearer token")
-        return verify_token(token, tenant.idp)
+        return verify_token(token, tenant.idp, tenant.settings.keycloak_username_claim)
 
     if auth_mode == "basic":
         if credentials is None:

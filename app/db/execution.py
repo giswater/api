@@ -94,6 +94,22 @@ def create_response(db_result=None, form_xml=None, status=None, message=None):
     return response
 
 
+def _version_envelope(raw, api_version) -> dict:
+    version = {"api": api_version}
+    if raw is not None:
+        version["db"] = raw
+    return version
+
+
+def _failed_procedure_result(text: str, api_version, raw=None) -> dict:
+    return {
+        "status": "Failed",
+        "message": {"level": 3, "text": text},
+        "version": _version_envelope(raw, api_version),
+        "body": {},
+    }
+
+
 async def _execute_procedure_on_conn(  # noqa: C901
     conn,
     *,
@@ -135,32 +151,20 @@ async def _execute_procedure_on_conn(  # noqa: C901
             result = row[0] if row else None
             await conn.commit()
         response_msg = json.dumps(result)
+        if isinstance(result, dict) and "version" in result:
+            result["version"] = _version_envelope(result["version"], api_version)
     except psycopg.Error as e:
         await conn.rollback()
         db_error = str(e)
-        db_version = None
-        if result and isinstance(result, dict) and "version" in result:
-            db_version = result["version"]
-        result = {
-            "status": "Failed",
-            "message": {"level": 3, "text": str(e)},
-            "version": {"api": api_version},
-            "body": {},
-        }
-        if db_version:
-            result["version"]["db"] = db_version
-        response_msg = str(e)
+        raw = result["version"] if isinstance(result, dict) and "version" in result else None
+        result = _failed_procedure_result(db_error, api_version, raw)
+        response_msg = db_error
     except Exception as e:
         logger.exception("Non-DB error in execute_procedure")
         await conn.rollback()
         db_error = str(e)
-        result = {
-            "status": "Failed",
-            "message": {"level": 3, "text": str(e)},
-            "version": {"api": api_version},
-            "body": {},
-        }
-        response_msg = str(e)
+        result = _failed_procedure_result(db_error, api_version)
+        response_msg = db_error
 
     if not result or (isinstance(result, dict) and result.get("status") == "Failed"):
         log.warning(f"{sql_preview}|||{response_msg}")
@@ -169,9 +173,6 @@ async def _execute_procedure_on_conn(  # noqa: C901
 
     if result:
         log.debug("execute_procedure response: %s", json.dumps(result, default=str))
-
-    if isinstance(result, dict) and "version" in result:
-        result["version"] = {"db": result["version"], "api": api_version}
 
     if global_settings.log_db_enabled:
         duration_ms = int((time.monotonic() - start_time) * 1000)

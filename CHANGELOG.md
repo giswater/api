@@ -7,9 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Production `celery-worker` and `celery-beat` drop to the non-root `app` user after fixing volume permissions (same entrypoint as `app`), so Celery no longer warns about running with superuser privileges.
+
+## [1.10.1] - 2026-11-13
+
+### Fixed
+
+- **`version` shape on database error** (no duplicate db key).
+
+## [1.10.0] - 2026-11-11
+
 ### Added
 
-- **`/cmms` visits and attachments** (list, get, create, update, delete, file download), gated by `API_CMMS`. Writes go to the singleton `cmms` schema; the DB user needs `role_cmms`. Uploads are stored under `CMMS_STORAGE_DIR` (default `data/cmms`, Docker volume `giswater_api_cmms`), capped by `CMMS_MAX_UPLOAD_MB` (default 100, 413 over the limit). Images and PDFs get a thumbnail; large images and HEIC/HEIF are resized (Pillow, pillow-heif, pypdfium2).
+- **`page` on `GET /features` collections** (nodes, arcs, links, connecs, gullies, and their GeoJSON routes). 1-based. Omit `orderBy` and rows are ordered by the feature id. Walk pages until `currentPage` >= `lastPage`. `page` > 1 needs Giswater DB ≥ 4.18.0 (`OFFSET` in `gw_fct_getfeatures`).
+
+### Changed
+
+- **`GISWATER_DB_MIN_VERSION`** default raised to **4.17.8**. Compatibility table: **1.10.x → Giswater DB ≥ 4.17.8**.
+- **`GET /features` collections** order by the feature id when `orderBy` is omitted. `lastPage` is the last 1-based page (`ceil(total / limit)`).
+- API docs (`${API_ROOT}/v1/docs` and `${API_ROOT}/admin/docs`) use Scalar instead of Swagger UI. Tag groups start collapsed. The sidebar search covers endpoints, tags, and models. Schemas are in the Models section.
+
+### Deprecated
+
+- **`${API_ROOT}/v1/docs/oauth2-redirect`** as the docs OAuth redirect URI (`DEPRECATED #44`; removal in **2.0.0**). The docs still use it, so existing Keycloak clients keep working. Add `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs` to *Valid redirect URIs* now; 2.0.0 switches to it and drops the old route.
+
+### Fixed
+
+- Pooled connections that Postgres or a firewall closed while idle (often after ~2h with one worker) are detected on checkout and replaced, instead of failing the next request. TCP keepalives default to 60s unless `DATABASE_URL` sets them.
+
+## [1.9.1] - 2026-11-05
+
+### Fixed
+
+- Plugins folder is now a Python module.
+
+## [1.9.0] - 2026-11-05
+
+### Added
+
+- **`/cmms` visits and attachments** (list, get, create, update, delete, file download), gated by `API_CMMS`. Writes go to the singleton `cmms` schema; the DB user needs `role_cmms`. Uploads are stored under `FILES_DIR` (default `data/files`, Docker volume `giswater_api_files`) at `{dir}/{tenant_id}/cmms/{attachment_id}/`, capped by `FILES_MAX_UPLOAD_MB` (default 100, 413 over the limit). `FILES_PUBLIC_URL` is the optional public base for stored paths. Admin tenant JSON exposes the three settings as `files`. Images and PDFs get a thumbnail; large images and HEIC/HEIF are resized (Pillow, pillow-heif, pypdfium2).
+- Tenant setting `KEYCLOAK_USERNAME_CLAIM` (default `preferred_username`, admin `auth.keycloak.username_claim`). The named JWT claim is the DB role for `SET ROLE`. If it is missing, the API falls back to `preferred_username`, then `sub`.
 - **CMMS MCP tools**: `list_visits`, `get_visit`, `create_visit`, `update_visit`, `delete_visit`, `list_attachments`, `get_attachment`. File upload stays on the REST API.
 - Tenant settings `ROLE_BASIC`, `ROLE_OM`, `ROLE_EDIT`, `ROLE_EPA`, `ROLE_PLAN`, `ROLE_ADMIN` and `ROLE_SYSTEM` (defaults are the capability ids, admin `roles.<id>`). `require_capability` resolves the Keycloak or basic-auth role name from the matching setting. Comma-separated names are OR. Unset keeps the capability id. Checks are exact names; a higher Giswater role does not imply a lower one.
 - **Alembic revision `0003_gwapi_capability_roles`**: replaces the unused `gwapi.roles` rows from `0001` (`role_basic`, `role_edit`, `role_om`, `role_epa`, `role_master`) with `basic`, `om`, `edit`, `epa`, `plan`, `admin` and `system`.
@@ -20,14 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Job progress reporting (`app/jobs/progress.py`) and background-job Keycloak auth (`app/jobs/worker_auth.py`). Jobs use a service account (`client_credentials`), preferring `WORKER_KEYCLOAK_CLIENT_*` and falling back to `KEYCLOAK_CLIENT_*`.
 - Docker Compose services: `redis`, `celery-worker`, `celery-beat` (dev and production `deploy/docker-compose.yml`).
 - Tests: `test_jobs_execute_task`, `test_jobs_reconcile`, `test_jobs_registry`.
-
-### Changed
-
-- Job status includes `step_durations_ms` with the elapsed time of each progress step.
-- **Breaking:** run jobs with `celery -A app.celery_app worker -Q giswater.jobs` (polling worker removed earlier).
-- `ensure_tenant_database` always runs Alembic when the tenant has a DB pool (jobs need `gwapi.jobs` regardless of auth mode / logging).
-- `JobService.create_job` enqueues Celery tasks after DB insert.
-- Job HTTP DTOs live in `app/schemas/jobs.py`; domain models stay in `app/jobs/models.py`.
 
 ### Fixed
 
@@ -422,7 +453,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic test with pytest.
 - Basic CI workflow.
 
-[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.8.1...main
+[unreleased]: https://github.com/Giswater/giswater-api/compare/v1.10.0...main
+[1.10.0]: https://github.com/Giswater/giswater-api/compare/v1.9.1...v1.10.0
+[1.9.1]: https://github.com/Giswater/giswater-api/compare/v1.9.0...v1.9.1
+[1.9.0]: https://github.com/Giswater/giswater-api/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/Giswater/giswater-api/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/Giswater/giswater-api/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Giswater/giswater-api/compare/v1.6.2...v1.7.0

@@ -39,6 +39,30 @@ def _rewrite_operation_security(security: list[dict], replacement: list[dict[str
     return out
 
 
+def scalar_authentication(tenant: Tenant, redirect_uri: str) -> dict | None:
+    """Prefill Scalar's auth form for a Keycloak tenant. Other auth modes need nothing."""
+    settings = tenant.settings
+    if settings.auth_mode != "keycloak":
+        return None
+    client = {"x-scalar-client-id": settings.keycloak_client_id, "selectedScopes": _SCOPE_NAMES}
+    return {
+        "preferredSecurityScheme": "keycloakAuthCode",
+        "securitySchemes": {
+            # DEPRECATED #44: drop redirect_uri in 2.0.0; Scalar then defaults to the docs page itself
+            "keycloakAuthCode": {
+                "flows": {
+                    "authorizationCode": {
+                        **client,
+                        "x-usePkce": "SHA-256",
+                        "x-scalar-redirect-uri": redirect_uri,
+                    }
+                }
+            },
+            "keycloakPassword": {"flows": {"password": client}},
+        },
+    }
+
+
 def _keycloak_security_schemes(tenant: Tenant, root_path: str) -> dict[str, dict]:
     settings = tenant.settings
     if not (settings.keycloak_url and settings.keycloak_realm):

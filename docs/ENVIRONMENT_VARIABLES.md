@@ -41,7 +41,6 @@ Request logging writes JSON lines to rotating files under `LOG_DIR`, and optiona
 | -------- | ------- | ----------- |
 | `LOG_LEVEL` | `INFO` | Root logging level for handlers created via `create_log` (e.g. `DEBUG`, `INFO`, `WARNING`). |
 | `LOG_DIR` | `logs` | Base directory for API log files (`\<LOG_DIR\>/\<tenant_or_global\>/\<YYYYMMDD\>/`). |
-| `CMMS_STORAGE_DIR` | `data/cmms` | CMMS attachment files. The API writes `{dir}/{tenant_id}/{attachment_id}/` and stores paths relative to this directory, so the mount can move. In Docker, mount a volume at this path (the production entrypoint chowns it to the app user). |
 | `LOG_ROTATE_DAYS` | `14` | Number of rotated daily log files to retain. |
 | `LOG_DB_ENABLED` | `true` | When `true`, eligible tenant requests may insert rows into the tenant DB API log schema (subject to sample rate). |
 | `LOG_DB_SAMPLE_RATE` | `1.0` | Fraction (0–1) of tenant-scoped requests that pass random sampling for **DB** log inserts. `1.0` means every eligible request is considered (typical for QGIS plugin traffic). `0` turns off DB sampling together with `LOG_DB_ENABLED` logic; prefer `LOG_DB_ENABLED=false` to disable DB logging entirely. Lower the rate if the log table becomes a bottleneck. |
@@ -65,7 +64,7 @@ Used only when evaluating tenant **`GET ${API_ROOT}/v1/ready`** (after the datab
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `GISWATER_DB_VERSION_CHECK` | `false` | When `true`, readiness compares `{DB_SCHEMA}.sys_version.giswater` to `GISWATER_DB_MIN_VERSION`. Returns **503** if missing or below minimum. |
-| `GISWATER_DB_MIN_VERSION` | `4.17.0` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Default matches [README compatibility](../README.md#compatibility). Override per deployment based on active endpoints. |
+| `GISWATER_DB_MIN_VERSION` | `4.17.8` | Minimum Giswater DB version string for the check (parsed as dotted numeric components). Default matches [README compatibility](../README.md#compatibility). Override per deployment based on active endpoints. |
 
 ### MCP
 
@@ -170,7 +169,9 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
 | `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
 | `API_CMMS` | `false` | CMMS visits and attachments (`/cmms`). Reads return only rows in the schema views `v_cmms_visit` and `v_cmms_attachment` (404 if CMMS is not integrated on that schema). Writes go to the singleton `cmms` schema; the DB user needs membership in `role_cmms`. |
-| `CMMS_MAX_UPLOAD_MB` | `100` | Max size of one CMMS upload, in MB. Checked while the file is written; over the limit returns 413 and leaves nothing on disk. The reverse proxy body limit must be at least this large (`client_max_body_size` in nginx). |
+| `FILES_DIR` | `data/files` | Root for uploaded files. The API writes `{dir}/{tenant_id}/cmms/{attachment_id}/` and stores that key, or a public URL when `FILES_PUBLIC_URL` is set. Blank uses the default. In Docker, mount a volume at this path (the production entrypoint chowns `/app/data/files`). A tenant may set another absolute path; `FILES_PUBLIC_URL` must point at that disk. Changing the directory does not move files already stored. Admin API: `files.dir`. |
+| `FILES_MAX_UPLOAD_MB` | `100` | Max size of one upload, in MB, for every feature that uses this store. Checked while the file is written; over the limit returns 413 and leaves nothing on disk. A value below 1 fails tenant load. The reverse proxy body limit must be at least this large (`client_max_body_size` in nginx). Admin API: `files.max_upload_mb`. |
+| `FILES_PUBLIC_URL` | _(empty)_ | Public base for new `cmms.attachment` `path` and `thumbnail_path` values (`{url}/{tenant_id}/cmms/{attachment_id}/{file}`), so a database reader such as QGIS can open the file. No trailing slash. Point it at the nginx alias in [`deploy/nginx.conf.example`](../deploy/nginx.conf.example) (`https://<host>/giswater/files`). The API still serves bytes from disk. Empty stores a relative key under `FILES_DIR` and clients use `/cmms/.../file`. Admin API: `files.public_url` (`null` or `""` clears it). |
 | `ENABLED_PLUGINS` | _(empty)_ | Comma-separated plugin folder names under `plugins/` to expose for this tenant. |
 | `ROLE_BASIC` | `basic` | Keycloak realm/client role, or `gwapi` basic-auth role, that satisfies capability `basic` when auth is not `none`. Comma-separated names are OR. Empty falls back to `basic`. Admin API: `roles.basic`. |
 | `ROLE_OM` | `om` | Same contract as `ROLE_BASIC`, for capability `om`. Admin API: `roles.om`. |
@@ -196,12 +197,14 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `DB_POOL_MIN_SIZE` | `1` | Pool minimum connections. |
+| `DB_POOL_MIN_SIZE` | `1` | Pool minimum connections. Set to `0` to let `DB_POOL_MAX_IDLE` close the last idle connection. |
 | `DB_POOL_MAX_SIZE` | `10` | Pool maximum connections. Total DB load ≈ **tenants × `DB_POOL_MAX_SIZE`**. |
 | `DB_POOL_TIMEOUT` | `30` | Seconds to wait for a connection from the pool. |
 | `DB_POOL_MAX_WAITING` | `0` | Max queued waiters (psycopg pool). |
-| `DB_POOL_MAX_IDLE` | `300` | Seconds before idle connections may be dropped. |
+| `DB_POOL_MAX_IDLE` | `300` | Seconds an unused connection above `DB_POOL_MIN_SIZE` may sit before the pool drops it. Connections held to satisfy `DB_POOL_MIN_SIZE` are not dropped. |
 | `DB_CONNECT_TIMEOUT` | `5` | Seconds for initial pool open / connectivity checks. |
+
+Each checkout pings the connection and replaces it if Postgres or the network has already closed it. The pool also enables libpq TCP keepalives (`keepalives_idle=60`, `keepalives_interval=10`, `keepalives_count=5`, `tcp_user_timeout=120000`) unless `DATABASE_URL` already sets that parameter.
 
 ### Tenant API authentication
 
@@ -227,18 +230,19 @@ When **`AUTH_MODE=keycloak`**, tenant routes expect a valid Bearer JWT for that 
 | `KEYCLOAK_CALLBACK_URI` | _(required if enabled)_ | Callback URI registered in Keycloak for this client setup. |
 | `WORKER_KEYCLOAK_CLIENT_ID` | `KEYCLOAK_CLIENT_ID` | Confidential client used by background jobs (`giswater-worker`). Service accounts only. |
 | `WORKER_KEYCLOAK_CLIENT_SECRET` | `KEYCLOAK_CLIENT_SECRET` | Secret for `WORKER_KEYCLOAK_CLIENT_ID`. |
+| `KEYCLOAK_USERNAME_CLAIM` | `preferred_username` | JWT claim used as the DB role (`SET ROLE`). If that claim is missing, the API falls back to `preferred_username`, then `sub`. |
 
-**Keycloak client checklist** (for the client named in `KEYCLOAK_CLIENT_ID`, required for Swagger OAuth and the token proxy):
+**Keycloak client checklist** (for the client named in `KEYCLOAK_CLIENT_ID`, required for docs OAuth and the token proxy):
 
-1. *Standard flow* ON — authorization-code button in Swagger UI.
-2. *Direct access grants* ON — username/password button in Swagger UI.
-3. *Valid redirect URIs* includes the exact `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs/oauth2-redirect` (in addition to `KEYCLOAK_CALLBACK_URI` if used elsewhere). Mid-host wildcards like `https://*.example.com/...` are **not** supported — only a trailing `*` (prefix match) or an exact URI.
+1. *Standard flow* ON — authorization-code button in the docs UI.
+2. *Direct access grants* ON — username/password button in the docs UI.
+3. *Valid redirect URIs* includes `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs/oauth2-redirect` (`DEPRECATED #44`; the docs still send this until **2.0.0**) and `https://<tenant>.<BASE_DOMAIN>${API_ROOT}/v1/docs` (what 2.0.0 will send), in addition to `KEYCLOAK_CALLBACK_URI` if used elsewhere. Mid-host wildcards like `https://*.example.com/...` are **not** supported — only a trailing `*` (prefix match) or an exact URI.
 4. An **Audience** protocol mapper with *Included Client Audience* = the same client (`KEYCLOAK_CLIENT_ID`) and *Add to access token* ON. Without it, `verify_token` rejects every token with `401 Invalid token` because Keycloak does not add the client to `aud` automatically.
 5. LDAP users authenticate through the realm's LDAP federation provider. The Direct Grant Flow must not force OTP, and the user must have no pending required actions (otherwise use the authorization-code flow).
-6. The API issues `SET ROLE <preferred_username>` on DB calls; each user needs a matching PostgreSQL role.
+6. The API issues `SET ROLE` with the JWT claim named by `KEYCLOAK_USERNAME_CLAIM` (default `preferred_username`; missing claim falls back to `preferred_username`, then `sub`). Each user needs a matching PostgreSQL role.
 7. *Service accounts* OFF on this client. Jobs use `WORKER_KEYCLOAK_CLIENT_ID` (`giswater-worker`), not this client.
 
-**Local IdP:** `docker compose --profile keycloak up -d keycloak` starts a preconfigured Keycloak on `http://auth.localhost:8080` (realm/client/user ready for Swagger). See [docker/keycloak/README.md](../docker/keycloak/README.md).
+**Local IdP:** `docker compose --profile keycloak up -d keycloak` starts a preconfigured Keycloak on `http://auth.localhost:8080` (realm/client/user ready for the docs UI). See [docker/keycloak/README.md](../docker/keycloak/README.md).
 
 ---
 

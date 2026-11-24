@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Giswater API</title>
+    <link rel="icon" href="favicon.ico" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.77.0"></script>
+    <script>
+      fetch("versions.json")
+        .then((response) => {
+          if (!response.ok) throw new Error("versions.json " + response.status);
+          return response.json();
+        })
+        .then((sources) => {
+          // Scalar reads ?api=<slug> itself and writes it back when the version changes.
+          Scalar.createApiReference("#app", {
+            sources,
+            telemetry: false,
+            agent: { disabled: true },
+          });
+        })
+        .catch((error) => {
+          document.getElementById("app").textContent = "Failed to load API docs: " + error.message;
+        });
+    </script>
+  </body>
+</html>
