@@ -5,22 +5,16 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
-from collections.abc import Callable
-from typing import Any
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Depends, FastAPI
-from starlette.routing import BaseRoute
-
-from app.api.deps import PLUGIN_BY_ENDPOINT, require_feature
-from app.api.v1.endpoints import auth, basic, cmms, crm, features, streets, system, jobs
+from app.api.v1.endpoints import auth, basic, cmms, crm, features, jobs, streets, system
 from app.api.v1.endpoints.epa import dscenario
 from app.api.v1.endpoints.om import flow, mincut, profile, waterbalance
 from app.api.v1.endpoints.om.mapzones import dma, dqa, omunit, omzone, presszone, sector
 from app.api.v1.endpoints.routing import routing
-from app.tenancy.registry import Tenant
 
-# Tuple list: `APIRouter` is not hashable in Python 3.13+ (cannot use as dict keys).
-ROUTER_FEATURES: list[tuple[APIRouter, str]] = [
+# None means the router is always mounted (not behind an API_* toggle).
+ROUTERS: list[tuple[APIRouter, str | None]] = [
     (basic.router, "api_basic"),
     (streets.router, "api_basic"),
     (features.router, "api_features"),
@@ -38,45 +32,7 @@ ROUTER_FEATURES: list[tuple[APIRouter, str]] = [
     (dqa.router, "api_mapzones"),
     (omzone.router, "api_mapzones"),
     (omunit.router, "api_mapzones"),
+    (system.router, None),
+    (jobs.router, None),
+    (auth.router, None),
 ]
-
-# Map endpoint callables to feature flag — used for per-tenant OpenAPI filtering.
-FEATURE_BY_ENDPOINT: dict[Callable[..., Any], str] = {}
-for _rtr, _flag in ROUTER_FEATURES:
-    for _route in _rtr.routes:
-        ep = getattr(_route, "endpoint", None)
-        if callable(ep):
-            FEATURE_BY_ENDPOINT[ep] = _flag
-
-# Endpoints only meaningful when the tenant uses Keycloak.
-KEYCLOAK_ONLY_ENDPOINTS = frozenset({auth.token})
-
-
-def register_v1(tenant_app: FastAPI) -> None:
-    """Include all v1 routers on the tenant app, feature-gated, plus the system router."""
-    for router, flag in ROUTER_FEATURES:
-        tenant_app.include_router(router, dependencies=[Depends(require_feature(flag))])
-    tenant_app.include_router(system.router)
-    tenant_app.include_router(jobs.router)
-    tenant_app.include_router(auth.router)
-
-
-def tenant_openapi_routes(tenant_app: FastAPI, tenant: Tenant) -> list[BaseRoute]:
-    """Routes to expose in OpenAPI for this tenant (feature + plugin toggles)."""
-    out: list[BaseRoute] = []
-    for route in tenant_app.routes:
-        ep = getattr(route, "endpoint", None)
-        if not callable(ep):
-            out.append(route)
-            continue
-        if ep in KEYCLOAK_ONLY_ENDPOINTS and tenant.settings.auth_mode != "keycloak":
-            continue
-        plugin_id = PLUGIN_BY_ENDPOINT.get(ep)
-        if plugin_id is not None:
-            if tenant.settings.plugin_enabled(plugin_id):
-                out.append(route)
-            continue
-        flag = FEATURE_BY_ENDPOINT.get(ep)
-        if flag is None or getattr(tenant.settings, flag, False):
-            out.append(route)
-    return out

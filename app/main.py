@@ -7,7 +7,6 @@ or (at your option) any later version.
 
 import logging
 import os
-from collections.abc import Callable
 from contextlib import asynccontextmanager
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -17,17 +16,22 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from scalar_fastapi import AgentScalarConfig, get_scalar_api_reference
-from starlette.routing import BaseRoute
 
 from .api.exception_handlers import register_exception_handlers
 from .api.admin.router import register_admin
-from .api.v1.router import register_v1
-from .api.v1.router import tenant_openapi_routes as tenant_openapi_routes_v1
-from .api.v2.router import register_v2
-from .api.v2.router import tenant_openapi_routes as tenant_openapi_routes_v2
+from .api.v1 import router as v1_router
+from .api.v2 import router as v2_router
+from .api.versioning import include_routers, tenant_openapi_routes
 from .auth import verify_admin
 from .core.config import global_settings
-from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIXES
+from .core.constants import (
+    ADMIN_PREFIX,
+    API_VERSIONS,
+    GLOBAL_HEALTH_PATH,
+    STATIC_PREFIX,
+    TENANT_PREFIXES,
+    UNRELEASED_API_VERSIONS,
+)
 from .core.openapi import apply_tenant_security, scalar_authentication
 from .middleware.request_logging import request_logging_middleware
 from .schemas.common import GwErrorResponse
@@ -71,11 +75,21 @@ def _register_health_route(app: FastAPI, path: str = "/health") -> None:
         return {"status": "ok"}
 
 
-def _create_tenant_app() -> FastAPI:
+def _version_copy(version: str) -> tuple[str, str]:
+    title = f"{TITLE} {version}"
+    description = DESCRIPTION
+    if version in UNRELEASED_API_VERSIONS:
+        title += " (unreleased)"
+        description = f"{DESCRIPTION} This version is unreleased and may change without notice."
+    return title, description
+
+
+def _create_tenant_app(version: str) -> FastAPI:
+    title, description = _version_copy(version)
     return FastAPI(
         version=VERSION,
-        title=TITLE,
-        description=DESCRIPTION,
+        title=title,
+        description=description,
         docs_url=None,
         openapi_url=None,
         redoc_url=None,
@@ -83,12 +97,10 @@ def _create_tenant_app() -> FastAPI:
     )
 
 
-def _register_tenant_meta_routes(
-    app: FastAPI,
-    *,
-    prefix: str,
-    openapi_routes_fn: Callable[[FastAPI, Tenant], list[BaseRoute]],
-) -> None:
+def _register_tenant_meta_routes(app: FastAPI, version: str) -> None:
+    prefix = TENANT_PREFIXES[version]
+    title, description = _version_copy(version)
+
     @app.get("/", summary="Service status")
     async def tenant_root():
         return {
@@ -101,12 +113,12 @@ def _register_tenant_meta_routes(
     @app.get("/openapi.json", include_in_schema=False)
     async def tenant_openapi_json(request: Request):
         tenant: Tenant = request.state.tenant
-        routes = openapi_routes_fn(app, tenant)
+        routes = tenant_openapi_routes(app, tenant)
         root_path = request.scope.get("root_path") or prefix
         schema = get_openapi(
-            title=TITLE,
+            title=title,
             version=VERSION,
-            description=DESCRIPTION,
+            description=description,
             routes=routes,
             servers=[{"url": root_path}],
         )
@@ -117,7 +129,7 @@ def _register_tenant_meta_routes(
     async def tenant_docs(request: Request):
         return _docs_html(
             f"{prefix}/openapi.json",
-            f"{TITLE} - docs",
+            f"{title} - docs",
             scalar_authentication(request.state.tenant, str(request.url_for("tenant_docs_oauth2_redirect"))),
         )
 
@@ -175,14 +187,6 @@ parent = FastAPI(
     responses=_TENANT_RESPONSES,
 )
 
-tenant_app_v1 = _create_tenant_app()
-tenant_app_v2 = _create_tenant_app()
-
-register_v1(tenant_app_v1)
-register_v2(tenant_app_v2)
-_register_tenant_meta_routes(tenant_app_v1, prefix=TENANT_PREFIXES["v1"], openapi_routes_fn=tenant_openapi_routes_v1)
-_register_tenant_meta_routes(tenant_app_v2, prefix=TENANT_PREFIXES["v2"], openapi_routes_fn=tenant_openapi_routes_v2)
-
 admin_app = FastAPI(
     title=f"{TITLE} - Admin",
     version=VERSION,
@@ -205,34 +209,43 @@ async def admin_docs(_request: Request):
 # Plain route, same as FastAPI's built-in docs: stays outside verify_admin.
 admin_app.add_route("/docs", admin_docs, include_in_schema=False)
 
+VERSION_ROUTERS = {"v1": v1_router.ROUTERS, "v2": v2_router.ROUTERS}
+
+tenant_apps: dict[str, FastAPI] = {}
+for _version in API_VERSIONS:
+    _tenant_app = _create_tenant_app(_version)
+    include_routers(_tenant_app, VERSION_ROUTERS[_version])
+    _register_tenant_meta_routes(_tenant_app, _version)
+    tenant_apps[_version] = _tenant_app
+    parent.mount(TENANT_PREFIXES[_version], _tenant_app)
+
 parent.mount(ADMIN_PREFIX, admin_app)
-parent.mount(TENANT_PREFIXES["v1"], tenant_app_v1)
-parent.mount(TENANT_PREFIXES["v2"], tenant_app_v2)
 parent.mount(STATIC_PREFIX, StaticFiles(directory="app/static"), name="static")
 
 _register_health_route(parent, GLOBAL_HEALTH_PATH)
-for _app in (tenant_app_v1, tenant_app_v2, admin_app):
-    _register_health_route(_app)
+_register_health_route(admin_app)
+for _tenant_app in tenant_apps.values():
+    _register_health_route(_tenant_app)
 
 
 # Middleware order: Starlette runs LIFO — register host_middleware first so it runs inner.
 parent.middleware("http")(host_middleware)
 parent.middleware("http")(request_logging_middleware)
 
-for _app in (parent, tenant_app_v1, tenant_app_v2, admin_app):
-    register_exception_handlers(_app)
+register_exception_handlers(parent)
+register_exception_handlers(admin_app)
+for _tenant_app in tenant_apps.values():
+    register_exception_handlers(_tenant_app)
 
-# TODO: Think about how to handle plugins for v2
-load_plugins(tenant_app_v1)
+load_plugins(tenant_apps["v1"])
 
-# TODO: MCP for v2
 mcp_runtime.configure(root_app=parent)
-tenant_app_v1.add_api_route(
+tenant_apps["v1"].add_api_route(
     "/mcp",
     mcp_runtime.mcp_http_endpoint,
     methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
     include_in_schema=False,
 )
-tenant_app_v1.mount("/mcp", mcp_runtime.mcp_dispatch)
+tenant_apps["v1"].mount("/mcp", mcp_runtime.mcp_dispatch)
 
 app = parent
