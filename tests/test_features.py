@@ -11,7 +11,7 @@ from dataclasses import replace
 import pytest
 
 from app.tenancy import state
-from tests.helpers import api, api_v2, assert_ready
+from tests.helpers import api, assert_ready
 
 
 def _db_version(client, default_params) -> str | None:
@@ -375,7 +375,7 @@ def test_create_review_rejects_empty_fields(client, default_params):
     assert_ready(client)
 
     response = client.post(
-        api_v2("/features/reviews"),
+        api("/features/reviews", "v2"),
         params=default_params,
         json={"tableName": "node", "tableId": 1, "changes": {}},
     )
@@ -402,7 +402,7 @@ def test_create_get_and_reject_review(client, default_params):
     review_id = None
     try:
         created = client.post(
-            api_v2("/features/reviews"),
+            api("/features/reviews", "v2"),
             params=default_params,
             json={
                 "tableName": "node",
@@ -417,7 +417,7 @@ def test_create_get_and_reject_review(client, default_params):
         assert "form" not in created_body["body"]
         review_id = created_body["body"]["id"]
 
-        opened = client.get(api_v2(f"/features/reviews/{review_id}"), params=default_params)
+        opened = client.get(api(f"/features/reviews/{review_id}", "v2"), params=default_params)
         assert opened.status_code == 200, opened.text
         opened_body = opened.json()
         assert opened_body["status"] == "Accepted"
@@ -429,7 +429,7 @@ def test_create_get_and_reject_review(client, default_params):
         assert "observ" in review["current_values"]
 
         rejected = client.post(
-            api_v2(f"/features/reviews/{review_id}/reject"),
+            api(f"/features/reviews/{review_id}/reject", "v2"),
             params=default_params,
             json={"annotation": "no"},
         )
@@ -439,7 +439,7 @@ def test_create_get_and_reject_review(client, default_params):
     finally:
         if review_id is not None:
             client.post(
-                api_v2(f"/features/reviews/{review_id}/reject"),
+                api(f"/features/reviews/{review_id}/reject", "v2"),
                 params=default_params,
                 json={"annotation": "test cleanup"},
             )

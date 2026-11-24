@@ -17,7 +17,7 @@ from app.schemas.om.mincut_models import (
     OmMincut,
     OmMincutValve,
 )
-from tests.helpers import api_v2, assert_ready
+from tests.helpers import api, assert_ready
 from tests.test_om import _create_mincut, _delete_mincut
 
 _GEOM_COLUMNS = ("anl_the_geom", "exec_the_geom", "polygon_the_geom")
@@ -145,7 +145,7 @@ def test_om_mincut_valve_parses_flags():
 
 
 def test_v2_health_and_openapi_include_mincuts(client: TestClient):
-    health = client.get(api_v2("/health"))
+    health = client.get(api("/health", "v2"))
     assert health.status_code == 200
     assert health.json() == {"status": "ok"}
 
@@ -178,7 +178,7 @@ def test_v2_health_and_openapi_include_mincuts(client: TestClient):
 def test_v2_get_mincuts(client: TestClient, default_params):
     assert_ready(client)
 
-    response = client.get(api_v2("/om/mincuts"), params=default_params)
+    response = client.get(api("/om/mincuts", "v2"), params=default_params)
 
     assert response.status_code == 200
     data = response.json()
@@ -197,7 +197,7 @@ def test_v2_get_mincuts_include_geometry(client: TestClient, default_params):
     assert_ready(client)
 
     params = {**default_params, "includeGeometry": "true"}
-    response = client.get(api_v2("/om/mincuts"), params=params)
+    response = client.get(api("/om/mincuts", "v2"), params=params)
 
     assert response.status_code == 200
     data = response.json()
@@ -219,7 +219,7 @@ def test_v2_get_mincut(client: TestClient, default_params):
     assert_ready(client)
     mincut_id = _create_mincut(client, default_params)
     try:
-        response = client.get(api_v2(f"/om/mincuts/{mincut_id}"), params=default_params)
+        response = client.get(api(f"/om/mincuts/{mincut_id}", "v2"), params=default_params)
 
         assert response.status_code == 200
         data = response.json()
@@ -252,7 +252,7 @@ def test_v2_get_mincut_include_geometry(client: TestClient, default_params):
     mincut_id = _create_mincut(client, default_params)
     try:
         params = {**default_params, "includeGeometry": "true"}
-        response = client.get(api_v2(f"/om/mincuts/{mincut_id}"), params=params)
+        response = client.get(api(f"/om/mincuts/{mincut_id}", "v2"), params=params)
 
         assert response.status_code == 200
         payload = response.json()["body"]
@@ -278,7 +278,7 @@ def test_v2_get_mincut_include_geometry(client: TestClient, default_params):
 def test_v2_get_mincut_not_found(client: TestClient, default_params):
     assert_ready(client)
 
-    response = client.get(api_v2("/om/mincuts/2147483647"), params=default_params)
+    response = client.get(api("/om/mincuts/2147483647", "v2"), params=default_params)
 
     assert response.status_code == 404
     assert "2147483647" in response.json()["detail"]

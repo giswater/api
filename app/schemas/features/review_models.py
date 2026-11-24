@@ -9,14 +9,10 @@ from datetime import datetime
 from enum import IntEnum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
-from app.schemas.common import BaseAPIResponse
+from app.schemas.common import BaseAPIResponse, StrictModel
 from app.schemas.features.feature_models import FeatureType
-
-
-class _V2Model(BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
 
 class ReviewStatus(IntEnum):
@@ -25,7 +21,7 @@ class ReviewStatus(IntEnum):
     REJECTED = 2
 
 
-class ReviewCreate(_V2Model):
+class ReviewCreate(StrictModel):
     """Changeset for one feature. gw_fct_core_feature_edit_request_create stores it as pending."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -36,7 +32,7 @@ class ReviewCreate(_V2Model):
     changes: Dict[str, Any] = Field(..., description="Proposed column values. Must not be empty.")
 
 
-class ReviewDecision(_V2Model):
+class ReviewDecision(StrictModel):
     """Accept or reject a pending review."""
 
     annotation: Optional[str] = Field(None, description="Reviewer note")
@@ -46,7 +42,7 @@ class ReviewDecision(_V2Model):
     )
 
 
-class ReviewListItem(_V2Model):
+class ReviewListItem(StrictModel):
     """One row from gw_fct_core_feature_edit_request_get_list."""
 
     id: int
@@ -67,7 +63,7 @@ class ReviewListItem(_V2Model):
     status_name: Optional[str] = None
 
 
-class ListReviewsData(_V2Model):
+class ListReviewsData(StrictModel):
     reviews: List[ReviewListItem] = Field(default_factory=list)
 
 
@@ -77,7 +73,7 @@ class ListReviewsResponse(BaseAPIResponse[ListReviewsData]):
     pass
 
 
-class CreateReviewData(_V2Model):
+class CreateReviewData(StrictModel):
     id: int = Field(..., description="Id from gw_fct_core_feature_edit_request_create")
 
 
@@ -103,7 +99,7 @@ class GetReviewResponse(BaseAPIResponse[Review]):
     pass
 
 
-class ReviewResult(_V2Model):
+class ReviewResult(StrictModel):
     id: int
     status: ReviewStatus
 

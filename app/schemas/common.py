@@ -6,7 +6,7 @@ or (at your option) any later version.
 """
 
 # flake8: noqa: E501
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_geojson import FeatureCollectionModel
 from typing import Literal, Optional, List, Generic, TypeVar, Any, Dict
 
@@ -41,6 +41,12 @@ class ExtentModel(BaseModel):
     x2: float = Field(..., title="X2", description="Maximum x coordinate", examples=[419097.86115133995])
     y1: float = Field(..., title="Y1", description="Minimum y coordinate", examples=[4576635.596078073])
     y2: float = Field(..., title="Y2", description="Maximum y coordinate", examples=[4576643.836554766])
+
+
+class StrictModel(BaseModel):
+    """Rejects unknown fields so the OpenAPI contract stays the declared schema."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class PointModel(BaseModel):

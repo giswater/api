@@ -10,18 +10,11 @@ from fastapi.testclient import TestClient
 from app.core.constants import GLOBAL_HEALTH_PATH, TENANT_PREFIXES
 
 
-def api(path: str) -> str:
-    """Build path under the tenant API prefix (mounted at `${API_ROOT}/v1`, default `/giswater/v1`)."""
+def api(path: str, version: str = "v1") -> str:
+    """Build a path under `${API_ROOT}/{version}` (default `/giswater/v1`)."""
     if not path.startswith("/"):
         path = "/" + path
-    return TENANT_PREFIXES["v1"] + path
-
-
-def api_v2(path: str) -> str:
-    """Build path under the v2 tenant API prefix (mounted at `${API_ROOT}/v2`, default `/giswater/v2`)."""
-    if not path.startswith("/"):
-        path = "/" + path
-    return TENANT_PREFIXES["v2"] + path
+    return TENANT_PREFIXES[version] + path
 
 
 def assert_ready(client: TestClient) -> None:

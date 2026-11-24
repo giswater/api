@@ -23,6 +23,7 @@ from ..common import (
     FilterFieldModel,
     GwField,
     PointModel,
+    StrictModel,
 )
 
 # region Value mappings
@@ -458,12 +459,6 @@ class MincutDeleteResponse(BaseAPIResponse[Dict]):
 # region Mincut list (v2) response models
 
 
-class _V2Model(BaseModel):
-    """v2 table-dump models reject unknown columns so the OpenAPI contract stays the schema."""
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class MincutState(IntEnum):
     PLANIFIED = 0
     IN_PROGRESS = 1
@@ -488,7 +483,7 @@ class GeoJsonGeometry(BaseModel):
     coordinates: Any
 
 
-class OmMincut(_V2Model):
+class OmMincut(StrictModel):
     """One om_mincut row. Full geometry fields are omitted unless includeGeometry=true."""
 
     id: int
@@ -542,14 +537,14 @@ class OmMincut(_V2Model):
     )
 
 
-class OmMincutArc(_V2Model):
+class OmMincutArc(StrictModel):
     id: int
     arc_id: int
     minsector_id: Optional[int] = None
     the_geom: Optional[GeoJsonGeometry] = None
 
 
-class OmMincutValve(_V2Model):
+class OmMincutValve(StrictModel):
     id: int
     node_id: int
     closed: Optional[bool] = None
@@ -562,7 +557,7 @@ class OmMincutValve(_V2Model):
     the_geom: Optional[GeoJsonGeometry] = None
 
 
-class OmMincutNode(_V2Model):
+class OmMincutNode(StrictModel):
     id: int
     node_id: int
     node_type: Optional[str] = None
@@ -570,19 +565,19 @@ class OmMincutNode(_V2Model):
     the_geom: Optional[GeoJsonGeometry] = None
 
 
-class OmMincutConnec(_V2Model):
+class OmMincutConnec(StrictModel):
     id: int
     connec_id: int
     customer_code: Optional[str] = None
     the_geom: Optional[GeoJsonGeometry] = None
 
 
-class OmMincutHydrometer(_V2Model):
+class OmMincutHydrometer(StrictModel):
     id: int
     hydrometer_id: int
 
 
-class GetMincutsData(_V2Model):
+class GetMincutsData(StrictModel):
     """Rows from om_mincut (geometry omitted unless includeGeometry=true)"""
 
     mincuts: List[OmMincut] = Field(
@@ -601,7 +596,7 @@ class GetMincutsResponse(BaseAPIResponse[GetMincutsData]):
     pass
 
 
-class GetMincutData(_V2Model):
+class GetMincutData(StrictModel):
     """One om_mincut row plus related network rows (geometry omitted unless includeGeometry=true)"""
 
     mincut: OmMincut
