@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Unreleased `${API_ROOT}/v2`**, off unless the tenant sets `API_V2=true`. `API_V1` (default `true`) gates the whole `/v1` prefix the same way. A tagged router also needs its existing `API_*` toggle (`API_MINCUT`, `API_FEATURES`, …), on every version. v2 endpoints: `GET /om/mincuts`, `GET /om/mincuts/{id}` (flat body, optional GeoJSON), and feature edit reviews under `/features/reviews`.
+- Plugins declare `API_VERSIONS` (default `("v1",)`) and are registered on each declared mount.
+- MCP tools take a `version` (default `v1`). A tool is exposed only when that version's toggle and its feature toggle are both on. The server stays at `${API_ROOT}/v1/mcp/`.
+
 ### Fixed
 
 - Production `celery-worker` and `celery-beat` drop to the non-root `app` user after fixing volume permissions (same entrypoint as `app`), so Celery no longer warns about running with superuser privileges.

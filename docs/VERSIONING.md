@@ -5,7 +5,7 @@ There are **three independent version layers**. Keep them separate.
 | Layer | Where | Example | Changes when |
 | --- | --- | --- | --- |
 | API package (semver) | `pyproject.toml` `version`, surfaced as `request.app.version` and in response `version.api` | `1.5.0` | Any release (features, fixes, internal refactors) |
-| URL version | HTTP path segment under `${API_ROOT}/v1` | `/giswater/v1/...` | Only on a **breaking HTTP contract** change |
+| URL version | HTTP path segment under `${API_ROOT}/vN` | `/giswater/v1/...`, `/giswater/v2/...` | Only on a **breaking HTTP contract** change |
 | Per-tenant Giswater DB version | `sys_version.giswater` per tenant schema | `4.8.1` | Independently, per tenant, as DBs are upgraded |
 
 ## Guidance
@@ -20,13 +20,21 @@ There are **three independent version layers**. Keep them separate.
 - **Additive Pydantic fields do not need a new URL version.** Adding optional
   response fields or new endpoints is a minor semver bump, still under `/v1`.
 
-## When to introduce `/v2`
+## `/v2`
 
-Add a `/v2` mount **only** on a breaking HTTP change, such as:
+`/v2` exists and is **unreleased**. `API_V2` defaults to `false`. The docs title
+is marked `(unreleased)` while `v2` is in `UNRELEASED_API_VERSIONS`
+(`app/core/constants.py`). Endpoints on an existing tag (`mincut`, `features`, …)
+use that tag's `API_*` toggle. v1 stays the default (`API_V1=true`).
 
-- changing path parameters or route shapes,
-- dropping or renaming response fields clients depend on,
-- redesigning the response envelope.
+Add another version (v3, v4, …) by:
 
-Then run `/v1` and `/v2` in parallel for at least one major cycle before removing
-`/v1`. Until such a break is required, all work stays under `/v1`.
+1. adding `app/api/vN/router.py` with a `ROUTERS` list,
+2. appending `"vN"` to `API_VERSIONS`,
+3. adding `"vN": vN_router.ROUTERS` to `VERSION_ROUTERS` in `app/main.py`,
+4. adding `api_vN: bool = False` on `TenantSettings`.
+
+The env name, admin `api` map, and tenant `.env` writer come from that field.
+Put a version in `UNRELEASED_API_VERSIONS` until its contract is stable. Releasing
+it is removing it from that set. Run the previous version in parallel for at least
+one major cycle before turning its `API_V*` default off.

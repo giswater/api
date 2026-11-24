@@ -68,7 +68,7 @@ Used only when evaluating tenant **`GET ${API_ROOT}/v1/ready`** (after the datab
 
 ### MCP
 
-Curated Model Context Protocol server mounted at `${API_ROOT}/v1/mcp/` (Streamable HTTP). Each tenant that enables it gets its own isolated FastMCP instance. Clients must authenticate with the same `Authorization` header the tenant `AUTH_MODE` expects.
+Curated Model Context Protocol server mounted at `${API_ROOT}/v1/mcp/` (Streamable HTTP). Each tenant that enables it gets its own isolated FastMCP instance. Clients must authenticate with the same `Authorization` header the tenant `AUTH_MODE` expects. The mount lives on v1, so the tenant also needs `API_V1=true`.
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
@@ -155,8 +155,12 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 
 ### API feature toggles
 
+A request under `${API_ROOT}/vN` needs `API_VN` and, for a tagged router, that tag's `API_*` toggle. The same tag toggle covers every version. A new tag is a new `api_*` field on `TenantSettings`; the env name, admin payload, and `.env` writer follow from the field.
+
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
+| `API_V1` | `true` | Mount `${API_ROOT}/v1`. `false` returns 404 for the whole prefix, including docs, OpenAPI, health, and `/mcp`. |
+| `API_V2` | `false` | Mount `${API_ROOT}/v2`. Unreleased: the contract may change without notice. |
 | `API_BASIC` | `false` | Basic GIS/feature endpoints module. |
 | `API_PROFILE` | `false` | Profile / trace tools module. |
 | `API_FLOW` | `false` | Flow analysis endpoints. |
@@ -167,7 +171,7 @@ One file per tenant: `config/tenants/<tenant_id>.env`. The filename stem is the 
 | `API_CRM` | `false` | CRM / hydrometer-style endpoints. |
 | `API_EPA` | `false` | EPA / dscenario endpoints. |
 | `API_FEATURES` | `false` | Feature collection endpoints (`/features/nodes`, …). Needs Giswater DB ≥ 4.17.0. |
-| `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires process-wide `MCP_ENABLED=true`. |
+| `API_MCP` | `false` | Expose the curated MCP server at `${API_ROOT}/v1/mcp/` for this tenant. Also requires `API_V1=true` and process-wide `MCP_ENABLED=true`. A tool is exposed only when its API version toggle is on as well. |
 | `API_CMMS` | `false` | CMMS visits and attachments (`/cmms`). Reads return only rows in the schema views `v_cmms_visit` and `v_cmms_attachment` (404 if CMMS is not integrated on that schema). Writes go to the singleton `cmms` schema; the DB user needs membership in `role_cmms`. |
 | `FILES_DIR` | `data/files` | Root for uploaded files. The API writes `{dir}/{tenant_id}/cmms/{attachment_id}/` and stores that key, or a public URL when `FILES_PUBLIC_URL` is set. Blank uses the default. In Docker, mount a volume at this path (the production entrypoint chowns `/app/data/files`). A tenant may set another absolute path; `FILES_PUBLIC_URL` must point at that disk. Changing the directory does not move files already stored. Admin API: `files.dir`. |
 | `FILES_MAX_UPLOAD_MB` | `100` | Max size of one upload, in MB, for every feature that uses this store. Checked while the file is written; over the limit returns 413 and leaves nothing on disk. A value below 1 fails tenant load. The reverse proxy body limit must be at least this large (`client_max_body_size` in nginx). Admin API: `files.max_upload_mb`. |
