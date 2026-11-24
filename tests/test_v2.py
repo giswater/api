@@ -5,11 +5,14 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.core.constants import TENANT_PREFIXES
+from app.tenancy import state
 from app.schemas.om.mincut_models import (
     GetMincutResponse,
     GetMincutsResponse,
@@ -142,6 +145,38 @@ def test_om_mincut_valve_parses_flags():
     assert valve.unaccess is False
     dumped = valve.model_dump(mode="json", exclude_unset=True)
     assert "the_geom" not in dumped
+
+
+def _with_version_flags(**flags):
+    tenant = state.registry.get("test")
+    assert tenant is not None
+    original = tenant.settings
+    tenant.settings = replace(original, **flags)
+    return original
+
+
+def test_api_v2_disabled_hides_v2(client: TestClient, default_params):
+    original = _with_version_flags(api_v2=False)
+    try:
+        hidden = client.get(api("/om/mincuts", "v2"), params=default_params)
+        assert hidden.status_code == 404
+        assert hidden.json()["detail"] == "API version disabled"
+        openapi = client.get(f"{TENANT_PREFIXES['v2']}/openapi.json")
+        assert openapi.status_code == 404
+        assert client.get(api("/health")).status_code == 200
+    finally:
+        state.registry.get("test").settings = original
+
+
+def test_api_v1_disabled_hides_v1(client: TestClient):
+    original = _with_version_flags(api_v1=False)
+    try:
+        hidden = client.get(api("/health"))
+        assert hidden.status_code == 404
+        assert hidden.json()["detail"] == "API version disabled"
+        assert client.get(api("/health", "v2")).status_code == 200
+    finally:
+        state.registry.get("test").settings = original
 
 
 def test_v2_health_and_openapi_include_mincuts(client: TestClient):

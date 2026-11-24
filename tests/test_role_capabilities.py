@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.auth.schemas import ApiUser
 from app.auth.session import get_current_user, require_capability
-from app.core.config import CAPABILITIES, TenantSettings, _build_tenant, normalize_role_names
+from app.core.config import CAPABILITIES, TenantSettings, _build_tenant, load_tenant_settings, normalize_role_names
 from app.schemas.admin import DbSettingsIn, FilesSettingsIn, TenantIn, TenantOut, build_tenant_settings_from_input
 from app.tenancy.registry import serialize_tenant_settings
 
@@ -194,3 +194,17 @@ def test_admin_round_trip_roles():
     assert body.files.dir == "data/files"
     assert body.files.public_url is None
     assert body.files.max_upload_mb == 100
+
+
+def test_version_toggles_survive_serialize(tmp_path):
+    settings = replace(_build_tenant({}), api_v1=False, api_v2=True)
+    path = tmp_path / "tenant.env"
+    path.write_text(serialize_tenant_settings(settings))
+    reloaded = load_tenant_settings(path)
+    assert reloaded.api_v1 is False
+    assert reloaded.api_v2 is True
+
+    tenant = SimpleNamespace(id="acme", settings=settings, db_manager=SimpleNamespace(connection_pool=None))
+    body = TenantOut.from_tenant(tenant)  # type: ignore[arg-type]
+    assert body.api["v1"] is False
+    assert body.api["v2"] is True
