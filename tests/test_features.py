@@ -5,10 +5,13 @@ General Public License as published by the Free Software Foundation, either vers
 or (at your option) any later version.
 """
 
+import asyncio
 from dataclasses import replace
 
 import pytest
-from tests.helpers import api, assert_ready
+
+from app.tenancy import state
+from tests.helpers import api, api_v2, assert_ready
 
 
 def _db_version(client, default_params) -> str | None:
@@ -325,3 +328,95 @@ def test_list_gullies_ud(client, default_params, path):
     data = response.json()
     assert data["status"] == "Accepted"
     assert "body" in data
+
+
+def _review_table_exists(schema: str) -> bool:
+    async def _run() -> bool:
+        async with state.registry.get("test").db_manager.get_db() as conn:
+            assert conn is not None, "Postgres not available"
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT to_regclass(%s)", (f"{schema}.feature_edit_request",))
+                row = await cur.fetchone()
+            await conn.rollback()
+        return bool(row and row[0])
+
+    assert state.registry is not None
+    return asyncio.run(_run())
+
+
+def test_create_review_rejects_empty_fields(client, default_params):
+    assert_ready(client)
+
+    response = client.post(
+        api_v2("/features/reviews"),
+        params=default_params,
+        json={"tableName": "node", "tableId": 1, "changes": {}},
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_get_and_reject_review(client, default_params):
+    assert_ready(client)
+    if not _review_table_exists(default_params["schema"]):
+        pytest.skip("feature_edit_request is not installed")
+
+    listing = client.get(api("/features/nodes"), params={**default_params, "limit": 1})
+    assert listing.status_code == 200
+    features = listing.json().get("body", {}).get("data", {}).get("features") or []
+    if not features:
+        pytest.skip("No nodes available to review")
+
+    node_id = features[0]["node_id"]
+    before = client.get(api(f"/features/nodes/{node_id}"), params=default_params)
+    assert before.status_code == 200
+    before_feature = before.json()["body"]["data"]["feature"]
+
+    review_id = None
+    try:
+        created = client.post(
+            api_v2("/features/reviews"),
+            params=default_params,
+            json={
+                "tableName": "node",
+                "tableId": int(node_id),
+                "annotation": "from the field",
+                "changes": {"observ": "api-review-proposed"},
+            },
+        )
+        assert created.status_code == 200, created.text
+        created_body = created.json()
+        assert created_body["status"] == "Accepted"
+        assert "form" not in created_body["body"]
+        review_id = created_body["body"]["id"]
+
+        opened = client.get(api_v2(f"/features/reviews/{review_id}"), params=default_params)
+        assert opened.status_code == 200, opened.text
+        opened_body = opened.json()
+        assert opened_body["status"] == "Accepted"
+        review = opened_body["body"]
+        assert review["table_name"] == "node"
+        assert review["table_id"] == int(node_id)
+        assert review["status"] == 0
+        assert review["field_changes"]["observ"] == "api-review-proposed"
+        assert "observ" in review["current_values"]
+
+        rejected = client.post(
+            api_v2(f"/features/reviews/{review_id}/reject"),
+            params=default_params,
+            json={"annotation": "no"},
+        )
+        assert rejected.status_code == 200, rejected.text
+        assert rejected.json()["status"] == "Accepted"
+        review_id = None
+    finally:
+        if review_id is not None:
+            client.post(
+                api_v2(f"/features/reviews/{review_id}/reject"),
+                params=default_params,
+                json={"annotation": "test cleanup"},
+            )
+
+    after = client.get(api(f"/features/nodes/{node_id}"), params=default_params)
+    assert after.status_code == 200
+    assert after.json()["body"]["data"]["feature"] == before_feature

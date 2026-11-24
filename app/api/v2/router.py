@@ -13,12 +13,14 @@ from starlette.routing import BaseRoute
 
 from app.api.deps import require_feature
 from app.api.v1.endpoints import auth, system
+from app.api.v2.endpoints import features
 from app.api.v2.endpoints.om import mincut
 from app.tenancy.registry import Tenant
 
 # Tuple list: `APIRouter` is not hashable in Python 3.13+ (cannot use as dict keys).
 ROUTER_FEATURES: list[tuple[APIRouter, str]] = [
     (mincut.router, "api_mincut"),
+    (features.router, "api_features"),
 ]
 
 # Map endpoint callables to feature flag — used for per-tenant OpenAPI filtering.
