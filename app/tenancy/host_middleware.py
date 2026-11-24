@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from . import state
 from ..core.config import global_settings
-from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_API_PREFIXES
+from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIXES
 from .registry import RESERVED_IDS, TENANT_ID_RE
 
 
@@ -49,7 +49,7 @@ def _path_starts(path: str, prefix: str) -> bool:
 
 
 def _is_tenant_api_path(path: str) -> bool:
-    return any(_path_starts(path, prefix) for prefix in TENANT_API_PREFIXES)
+    return any(_path_starts(path, prefix) for prefix in TENANT_PREFIXES.values())
 
 
 def _resolve_tenant(request: Request, tid: str):

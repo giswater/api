@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.core.constants import TENANT_PREFIX_V2
+from app.core.constants import TENANT_PREFIXES
 from app.schemas.om.mincut_models import (
     GetMincutResponse,
     GetMincutsResponse,
@@ -149,7 +149,7 @@ def test_v2_health_and_openapi_include_mincuts(client: TestClient):
     assert health.status_code == 200
     assert health.json() == {"status": "ok"}
 
-    openapi = client.get(f"{TENANT_PREFIX_V2}/openapi.json")
+    openapi = client.get(f"{TENANT_PREFIXES['v2']}/openapi.json")
     assert openapi.status_code == 200
     paths = openapi.json()["paths"]
     assert "/om/mincuts" in paths

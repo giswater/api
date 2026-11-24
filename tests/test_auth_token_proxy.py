@@ -12,10 +12,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.constants import TENANT_PREFIX_V1
+from app.core.constants import TENANT_PREFIXES
 from app.main import app
 
-TOKEN_URL = f"{TENANT_PREFIX_V1}/auth/token"
+TOKEN_URL = f"{TENANT_PREFIXES['v1']}/auth/token"
 
 
 def _write_tenant_env(tenant_id: str, *, auth_mode: str, keycloak: bool = False) -> None:

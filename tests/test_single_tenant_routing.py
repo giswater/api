@@ -39,7 +39,7 @@ os.environ.setdefault("LOG_DB_ENABLED", "false")
 os.environ.setdefault("GISWATER_DB_VERSION_CHECK", "false")
 
 from fastapi.testclient import TestClient
-from app.core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, TENANT_PREFIX_V1, TENANT_PREFIX_V2
+from app.core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, TENANT_PREFIXES
 from app.main import app
 """
 
@@ -50,8 +50,8 @@ def test_single_tenant_serves_tenant_routes_by_ip():
         _PRELUDE.format(single="test")
         + """
 with TestClient(app, base_url="http://127.0.0.1") as c:
-    r_tenant = c.get(f"{TENANT_PREFIX_V1}/health")
-    r_tenant_v2 = c.get(f"{TENANT_PREFIX_V2}/health")
+    r_tenant = c.get(f"{TENANT_PREFIXES['v1']}/health")
+    r_tenant_v2 = c.get(f"{TENANT_PREFIXES['v2']}/health")
     r_global = c.get(GLOBAL_HEALTH_PATH)
 
 print(json.dumps({
@@ -88,7 +88,7 @@ def test_single_tenant_ignores_hostile_host_header():
         _PRELUDE.format(single="test")
         + """
 with TestClient(app, base_url="http://attacker.example.com") as c:
-    r = c.get(f"{TENANT_PREFIX_V1}/health", headers={"host": "evil.example.com"})
+    r = c.get(f"{TENANT_PREFIXES['v1']}/health", headers={"host": "evil.example.com"})
 
 print(json.dumps({"status": r.status_code}))
 """
@@ -103,7 +103,7 @@ def test_single_tenant_missing_returns_unknown_tenant():
         _PRELUDE.format(single="missingtenant")
         + """
 with TestClient(app, base_url="http://127.0.0.1") as c:
-    r = c.get(f"{TENANT_PREFIX_V1}/health")
+    r = c.get(f"{TENANT_PREFIXES['v1']}/health")
 
 print(json.dumps({"status": r.status_code, "detail": r.json().get("detail")}))
 """
@@ -119,8 +119,8 @@ def test_single_tenant_dns_mode_unchanged_when_unset():
         _PRELUDE.format(single="")
         + """
 with TestClient(app, base_url="http://test.bgeo360.com") as c:
-    r_tenant = c.get(f"{TENANT_PREFIX_V1}/health")
-    r_apex_tenant = c.get(f"{TENANT_PREFIX_V1}/health", headers={"host": "bgeo360.com"})
+    r_tenant = c.get(f"{TENANT_PREFIXES['v1']}/health")
+    r_apex_tenant = c.get(f"{TENANT_PREFIXES['v1']}/health", headers={"host": "bgeo360.com"})
     r_admin_subdomain = c.get(
         f"{ADMIN_PREFIX}/health",
         headers={"host": "test.bgeo360.com"},

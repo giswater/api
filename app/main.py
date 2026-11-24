@@ -27,7 +27,7 @@ from .api.v2.router import register_v2
 from .api.v2.router import tenant_openapi_routes as tenant_openapi_routes_v2
 from .auth import verify_admin
 from .core.config import global_settings
-from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX_V1, TENANT_PREFIX_V2
+from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIXES
 from .core.openapi import apply_tenant_security, scalar_authentication
 from .middleware.request_logging import request_logging_middleware
 from .schemas.common import GwErrorResponse
@@ -180,8 +180,8 @@ tenant_app_v2 = _create_tenant_app()
 
 register_v1(tenant_app_v1)
 register_v2(tenant_app_v2)
-_register_tenant_meta_routes(tenant_app_v1, prefix=TENANT_PREFIX_V1, openapi_routes_fn=tenant_openapi_routes_v1)
-_register_tenant_meta_routes(tenant_app_v2, prefix=TENANT_PREFIX_V2, openapi_routes_fn=tenant_openapi_routes_v2)
+_register_tenant_meta_routes(tenant_app_v1, prefix=TENANT_PREFIXES["v1"], openapi_routes_fn=tenant_openapi_routes_v1)
+_register_tenant_meta_routes(tenant_app_v2, prefix=TENANT_PREFIXES["v2"], openapi_routes_fn=tenant_openapi_routes_v2)
 
 admin_app = FastAPI(
     title=f"{TITLE} - Admin",
@@ -206,8 +206,8 @@ async def admin_docs(_request: Request):
 admin_app.add_route("/docs", admin_docs, include_in_schema=False)
 
 parent.mount(ADMIN_PREFIX, admin_app)
-parent.mount(TENANT_PREFIX_V1, tenant_app_v1)
-parent.mount(TENANT_PREFIX_V2, tenant_app_v2)
+parent.mount(TENANT_PREFIXES["v1"], tenant_app_v1)
+parent.mount(TENANT_PREFIXES["v2"], tenant_app_v2)
 parent.mount(STATIC_PREFIX, StaticFiles(directory="app/static"), name="static")
 
 _register_health_route(parent, GLOBAL_HEALTH_PATH)

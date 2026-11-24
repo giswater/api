@@ -13,7 +13,7 @@ import textwrap
 import pytest
 
 from app.core.config import _normalize_api_root
-from app.core.constants import ADMIN_PREFIX, API_ROOT, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX_V1, TENANT_PREFIX_V2
+from app.core.constants import ADMIN_PREFIX, API_ROOT, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIXES
 
 
 @pytest.mark.parametrize(
@@ -42,8 +42,8 @@ def test_normalize_api_root_rejects(bad):
 def test_default_prefixes_are_under_giswater():
     """With no override (conftest does not set API_ROOT), the default is /giswater."""
     assert API_ROOT == "/giswater"
-    assert TENANT_PREFIX_V1 == "/giswater/v1"
-    assert TENANT_PREFIX_V2 == "/giswater/v2"
+    assert TENANT_PREFIXES["v1"] == "/giswater/v1"
+    assert TENANT_PREFIXES["v2"] == "/giswater/v2"
     assert ADMIN_PREFIX == "/giswater/admin"
     assert GLOBAL_HEALTH_PATH == "/giswater/health"
     assert STATIC_PREFIX == "/giswater/static"
@@ -71,13 +71,13 @@ def test_api_root_override_reroutes_app(tmp_path):
         os.environ.setdefault("GISWATER_DB_VERSION_CHECK", "false")
 
         from fastapi.testclient import TestClient
-        from app.core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, TENANT_PREFIX_V1, TENANT_PREFIX_V2
+        from app.core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, TENANT_PREFIXES
         from app.main import app
 
         with TestClient(app, base_url="http://test.bgeo360.com") as c:
             r1 = c.get(GLOBAL_HEALTH_PATH)
-            r2 = c.get(f"{TENANT_PREFIX_V1}/health")
-            r2b = c.get(f"{TENANT_PREFIX_V2}/health")
+            r2 = c.get(f"{TENANT_PREFIXES['v1']}/health")
+            r2b = c.get(f"{TENANT_PREFIXES['v2']}/health")
             r3 = c.get(
                 f"{ADMIN_PREFIX}/health",
                 headers={"host": "bgeo360.com"},
@@ -87,8 +87,8 @@ def test_api_root_override_reroutes_app(tmp_path):
             r4 = c.get("/giswater/health")
 
         out = {
-            "tenant_prefix_v1": TENANT_PREFIX_V1,
-            "tenant_prefix_v2": TENANT_PREFIX_V2,
+            "tenant_prefix_v1": TENANT_PREFIXES["v1"],
+            "tenant_prefix_v2": TENANT_PREFIXES["v2"],
             "admin_prefix": ADMIN_PREFIX,
             "health_path": GLOBAL_HEALTH_PATH,
             "global_health": r1.status_code,

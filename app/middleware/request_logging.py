@@ -11,7 +11,7 @@ from starlette.responses import Response
 
 from ..tenancy import state
 from ..core.config import global_settings
-from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_API_PREFIXES
+from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIXES
 from ..db.context import DB_IDENTITY_CTX, REQUEST_ID_CTX
 from ..db.log_store import insert_api_log
 
@@ -122,7 +122,7 @@ async def _resolve_api_logger(request: Request):
 
 def _tenant_api_rest(path: str) -> str | None:
     """Return the path under a tenant API prefix, or None if not a tenant API path."""
-    for prefix in TENANT_API_PREFIXES:
+    for prefix in TENANT_PREFIXES.values():
         if not _path_starts(path, prefix):
             continue
         rest = path[len(prefix) :] if path.startswith(prefix) else path
