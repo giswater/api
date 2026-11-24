@@ -41,14 +41,11 @@ def _iter_plugin_modules():
             logger.exception("Failed to load plugin '%s'", plugin)
 
 
-def load_plugins(app: FastAPI):
-    """
-    Load plugins from the plugins directory for a specific app instance.
-
-    Args:
-        app: FastAPI app instance to register plugins to
-    """
+def load_plugins(app: FastAPI, version: str) -> None:
+    """Register plugins that declare ``version`` in their ``API_VERSIONS`` (default ``v1``)."""
     for plugin, module in _iter_plugin_modules():
+        if version not in getattr(module, "API_VERSIONS", ("v1",)):
+            continue
         try:
             register = getattr(module, "register_plugin", None)
             if callable(register):

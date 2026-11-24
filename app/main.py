@@ -237,7 +237,8 @@ register_exception_handlers(admin_app)
 for _tenant_app in tenant_apps.values():
     register_exception_handlers(_tenant_app)
 
-load_plugins(tenant_apps["v1"])
+for _version, _tenant_app in tenant_apps.items():
+    load_plugins(_tenant_app, _version)
 
 mcp_runtime.configure(root_app=parent)
 tenant_apps["v1"].add_api_route(

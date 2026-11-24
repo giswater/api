@@ -1,17 +1,21 @@
 # Plugins Directory
 
-Place one folder per plugin. Each plugin is loaded at startup on the tenant API surface (`${API_ROOT}/v1`).
+Place one folder per plugin. Each plugin is loaded at startup on the tenant API versions it declares.
 
 ## Contract
 
 Every plugin folder must expose:
 
 ```python
+API_VERSIONS = ("v1",)  # optional; defaults to v1 only
+
 def register_plugin(app: FastAPI, plugin_id: str) -> None:
     ...
 ```
 
 `plugin_id` is the folder name (valid Python identifier, e.g. `my_plugin`, not `my-plugin`). It is the same value used in the tenant allowlist.
+
+`API_VERSIONS` lists the mounts that call `register_plugin` (`v1`, `v2`, …). Omit it to stay on v1. A plugin that also serves v2 sets `API_VERSIONS = ("v1", "v2")` and registers routers that match each version's contract. `register_plugin` is called once per declared version, with that version's app.
 
 ## Enable per tenant
 
