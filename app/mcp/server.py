@@ -24,10 +24,17 @@ _INSTRUCTIONS = (
 )
 
 
-def build_tenant_mcp(tenant: Tenant, root_app: ASGIApp) -> tuple[FastMCP, TenantApi]:
-    api = TenantApi(tenant, root_app)
+def build_tenant_mcp(tenant: Tenant, root_app: ASGIApp) -> tuple[FastMCP, dict[str, TenantApi]]:
+    apis: dict[str, TenantApi] = {}
     mcp = FastMCP(name=f"Giswater API ({tenant.id})", instructions=_INSTRUCTIONS)
     for spec in REGISTRY:
-        if spec.feature is None or getattr(tenant.settings, spec.feature):
-            mcp.tool(spec.bind(api), name=spec.fn.__name__, annotations=spec.annotations)
-    return mcp, api
+        if not getattr(tenant.settings, f"api_{spec.version}"):
+            continue
+        if spec.feature is not None and not getattr(tenant.settings, spec.feature):
+            continue
+        api = apis.get(spec.version)
+        if api is None:
+            api = TenantApi(tenant, root_app, spec.version)
+            apis[spec.version] = api
+        mcp.tool(spec.bind(api), name=spec.fn.__name__, annotations=spec.annotations)
+    return mcp, apis

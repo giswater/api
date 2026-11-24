@@ -16,6 +16,7 @@ from typing import Annotated, Any, Callable
 from pydantic import Field
 
 from app.core.config import TenantSettings
+from app.core.constants import API_VERSIONS
 
 CURRENT_MCP_TOOL: ContextVar[str | None] = ContextVar("current_mcp_tool", default=None)
 
@@ -43,6 +44,7 @@ class ToolSpec:
     feature: str | None
     annotations: dict[str, bool]
     project_types: frozenset[str] | None = None
+    version: str = "v1"
 
     def bind(self, api: Any) -> Callable[..., Any]:
         """Bind ``api`` as the first argument and hide it from the MCP schema."""
@@ -78,6 +80,7 @@ def tool(
     destructive: bool = False,
     idempotent: bool | None = None,
     project_types: set[str] | frozenset[str] | None = None,
+    version: str = "v1",
 ):
     """Register a curated MCP tool. ``feature`` is a TenantSettings ``api_*`` flag.
 
@@ -87,6 +90,8 @@ def tool(
     """
 
     def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
+        if version not in API_VERSIONS:
+            raise ValueError(f"Unknown API version {version!r} on {fn.__name__}")
         if feature is not None and feature not in _TENANT_SETTING_FIELDS:
             raise ValueError(f"Unknown tenant feature flag {feature!r} on {fn.__name__}")
         types = frozenset(t.upper() for t in project_types) if project_types else None
@@ -105,6 +110,7 @@ def tool(
                     "openWorldHint": True,
                 },
                 types,
+                version,
             )
         )
         return fn
