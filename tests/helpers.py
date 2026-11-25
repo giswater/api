@@ -7,14 +7,14 @@ or (at your option) any later version.
 
 from fastapi.testclient import TestClient
 
-from app.core.constants import GLOBAL_HEALTH_PATH, TENANT_PREFIX
+from app.core.constants import GLOBAL_HEALTH_PATH, TENANT_PREFIXES
 
 
-def api(path: str) -> str:
-    """Build path under the tenant API prefix (mounted at `${API_ROOT}/v1`, default `/giswater/v1`)."""
+def api(path: str, version: str = "v1") -> str:
+    """Build a path under `${API_ROOT}/{version}` (default `/giswater/v1`)."""
     if not path.startswith("/"):
         path = "/" + path
-    return TENANT_PREFIX + path
+    return TENANT_PREFIXES[version] + path
 
 
 def assert_ready(client: TestClient) -> None:

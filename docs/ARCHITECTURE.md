@@ -12,13 +12,17 @@ conventions and the [full-stack template](https://github.com/fastapi/full-stack-
 
 ```
 app/
-  main.py                 # lifespan, the three FastAPI sub-apps, mounts, middleware + handler registration
+  main.py                 # lifespan, one tenant app per API version, mounts, middleware + handler registration
   api/                    # HTTP layer (uses absolute `from app...` imports)
     deps.py               # CommonsDep, TenantUserDep, get_service_context, get_schema, require_feature, register_plugin_router
     exception_handlers.py # register_exception_handlers
+    versioning.py         # include_routers, FEATURE_BY_ENDPOINT, tenant_openapi_routes
     v1/
-      router.py           # ROUTER_FEATURES wiring + per-tenant OpenAPI filter
+      router.py           # ROUTERS: (router, api_* flag or None)
       endpoints/          # thin route handlers; delegate to services/ (includes jobs.py)
+    v2/
+      router.py           # ROUTERS for the unreleased v2 mount
+      endpoints/          # v2 handlers (mincut, feature reviews)
     admin/
       router.py           # aggregates the admin sub-app routers
       tenants.py          # tenant lifecycle endpoints
@@ -39,7 +43,7 @@ app/
     main.py               # command groups (admin, tenant)
   core/                   # LEAF: no intra-app imports
     config.py             # GlobalSettings / TenantSettings, AUTH_MODES, deprecation constants
-    constants.py          # API_ROOT, TENANT_PREFIX, ADMIN_PREFIX, STATIC_PREFIX, GLOBAL_HEALTH_PATH
+    constants.py          # API_ROOT, API_VERSIONS, TENANT_PREFIXES, UNRELEASED_API_VERSIONS, ADMIN_PREFIX, STATIC_PREFIX, GLOBAL_HEALTH_PATH
     exceptions.py         # ProcedureError, DatabaseUnavailableError, InvalidParametersError
   auth/
     __init__.py           # re-exports get_current_user, verify_admin, require_role, ApiUser

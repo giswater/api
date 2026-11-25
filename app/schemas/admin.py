@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ..core.config import CAPABILITIES, TenantSettings, normalize_files_public_url, normalize_role_names
+from ..core.config import API_TOGGLES, CAPABILITIES, TenantSettings, normalize_files_public_url, normalize_role_names
 from ..tenancy.registry import Tenant
 
 AuthMode = Literal["none", "basic", "keycloak"]
@@ -149,20 +149,7 @@ class TenantOut(BaseModel):
     @classmethod
     def from_tenant(cls, tenant: Tenant) -> "TenantOut":
         s = tenant.settings
-        api = {
-            "basic": s.api_basic,
-            "profile": s.api_profile,
-            "flow": s.api_flow,
-            "mincut": s.api_mincut,
-            "water_balance": s.api_water_balance,
-            "mapzones": s.api_mapzones,
-            "routing": s.api_routing,
-            "crm": s.api_crm,
-            "epa": s.api_epa,
-            "features": s.api_features,
-            "mcp": s.api_mcp,
-            "cmms": s.api_cmms,
-        }
+        api = {field.name.removeprefix("api_"): getattr(s, field.name) for field in API_TOGGLES}
         db = DbSettingsOut(
             host=s.db_host,
             port=s.db_port,
@@ -250,10 +237,13 @@ def _kept(new, old):
     return new if new is not None else old
 
 
-def _api_flag(api: dict[str, bool], name: str, existing: Optional[TenantSettings]) -> bool:
+def _api_flag(api: dict[str, bool], toggle, existing: Optional[TenantSettings]) -> bool:
+    name = toggle.name.removeprefix("api_")
     if name in api:
         return bool(api[name])
-    return bool(getattr(existing, f"api_{name}", False)) if existing else False
+    if existing is not None:
+        return bool(getattr(existing, toggle.name))
+    return bool(toggle.default)
 
 
 def _plugins(payload: TenantIn, existing: Optional[TenantSettings]) -> frozenset[str]:
@@ -338,18 +328,7 @@ def build_tenant_settings_from_input(
     files_dir, files_public_url, files_max_upload_mb = _files_from_input(payload, existing)
 
     settings = TenantSettings(
-        api_basic=_api_flag(api, "basic", existing),
-        api_profile=_api_flag(api, "profile", existing),
-        api_flow=_api_flag(api, "flow", existing),
-        api_mincut=_api_flag(api, "mincut", existing),
-        api_water_balance=_api_flag(api, "water_balance", existing),
-        api_mapzones=_api_flag(api, "mapzones", existing),
-        api_routing=_api_flag(api, "routing", existing),
-        api_crm=_api_flag(api, "crm", existing),
-        api_epa=_api_flag(api, "epa", existing),
-        api_features=_api_flag(api, "features", existing),
-        api_mcp=_api_flag(api, "mcp", existing),
-        api_cmms=_api_flag(api, "cmms", existing),
+        **{toggle.name: _api_flag(api, toggle, existing) for toggle in API_TOGGLES},
         files_dir=files_dir,
         files_max_upload_mb=files_max_upload_mb,
         files_public_url=files_public_url,

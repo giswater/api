@@ -11,7 +11,9 @@ or (at your option) any later version.
 from .config import global_settings
 
 API_ROOT = global_settings.api_root
-TENANT_PREFIX = f"{API_ROOT}/v1"
+API_VERSIONS = ("v1", "v2")
+UNRELEASED_API_VERSIONS = frozenset({"v2"})
+TENANT_PREFIXES = {version: f"{API_ROOT}/{version}" for version in API_VERSIONS}
 ADMIN_PREFIX = f"{API_ROOT}/admin"
 GLOBAL_HEALTH_PATH = f"{API_ROOT}/health"
 STATIC_PREFIX = f"{API_ROOT}/static"

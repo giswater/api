@@ -16,7 +16,7 @@ from fastmcp.server.dependencies import get_http_request
 from starlette.types import ASGIApp
 
 from app.core.config import global_settings
-from app.core.constants import TENANT_PREFIX
+from app.core.constants import TENANT_PREFIXES
 from app.mcp.registry import CURRENT_MCP_TOOL, ToolSpec, spec_by_name
 from app.mcp.shaping import failed_text
 from app.tenancy.registry import Tenant
@@ -45,12 +45,13 @@ def refuse_incompatible(meta: dict, spec: ToolSpec | None) -> None:
 class TenantApi:
     """In-process loopback client into the parent app for one tenant."""
 
-    def __init__(self, tenant: Tenant, root_app: ASGIApp):
+    def __init__(self, tenant: Tenant, root_app: ASGIApp, version: str):
         self.tenant_id = tenant.id
+        self.version = version
         host = f"{tenant.id}.{global_settings.base_domain}" if global_settings.base_domain else "mcp.internal"
         self._client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=root_app),
-            base_url=f"http://{host}{TENANT_PREFIX}",
+            base_url=f"http://{host}{TENANT_PREFIXES[version]}",
             event_hooks={"request": [self._forward]},
             timeout=global_settings.mcp_timeout,
         )

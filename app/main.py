@@ -19,10 +19,19 @@ from scalar_fastapi import AgentScalarConfig, get_scalar_api_reference
 
 from .api.exception_handlers import register_exception_handlers
 from .api.admin.router import register_admin
-from .api.v1.router import register_v1, tenant_openapi_routes
+from .api.v1 import router as v1_router
+from .api.v2 import router as v2_router
+from .api.versioning import include_routers, tenant_openapi_routes
 from .auth import verify_admin
 from .core.config import global_settings
-from .core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX
+from .core.constants import (
+    ADMIN_PREFIX,
+    API_VERSIONS,
+    GLOBAL_HEALTH_PATH,
+    STATIC_PREFIX,
+    TENANT_PREFIXES,
+    UNRELEASED_API_VERSIONS,
+)
 from .core.openapi import apply_tenant_security, scalar_authentication
 from .middleware.request_logging import request_logging_middleware
 from .schemas.common import GwErrorResponse
@@ -39,6 +48,11 @@ VERSION = pkg_version("giswater-api")
 DESCRIPTION = "API for interacting with a Giswater database."
 SCALAR_JS_URL = "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.77.0"
 logger = logging.getLogger(__name__)
+
+_TENANT_RESPONSES = {
+    500: {"model": GwErrorResponse, "description": "Database function error"},
+    503: {"model": GwErrorResponse, "description": "Database unavailable"},
+}
 
 
 def _docs_html(openapi_url: str, title: str, authentication: dict | None = None):
@@ -59,6 +73,75 @@ def _register_health_route(app: FastAPI, path: str = "/health") -> None:
     async def health():
         """Liveness probe: process is up."""
         return {"status": "ok"}
+
+
+def _version_copy(version: str) -> tuple[str, str]:
+    title = f"{TITLE} {version}"
+    description = DESCRIPTION
+    if version in UNRELEASED_API_VERSIONS:
+        title += " (unreleased)"
+        description = f"{DESCRIPTION} This version is unreleased and may change without notice."
+    return title, description
+
+
+def _create_tenant_app(version: str) -> FastAPI:
+    title, description = _version_copy(version)
+    return FastAPI(
+        version=VERSION,
+        title=title,
+        description=description,
+        docs_url=None,
+        openapi_url=None,
+        redoc_url=None,
+        responses=_TENANT_RESPONSES,
+    )
+
+
+def _register_tenant_meta_routes(app: FastAPI, version: str) -> None:
+    prefix = TENANT_PREFIXES[version]
+    title, description = _version_copy(version)
+
+    @app.get("/", summary="Service status")
+    async def tenant_root():
+        return {
+            "status": "Accepted",
+            "message": f"{TITLE} is running.",
+            "version": VERSION,
+            "description": DESCRIPTION,
+        }
+
+    @app.get("/openapi.json", include_in_schema=False)
+    async def tenant_openapi_json(request: Request):
+        tenant: Tenant = request.state.tenant
+        routes = tenant_openapi_routes(app, tenant)
+        root_path = request.scope.get("root_path") or prefix
+        schema = get_openapi(
+            title=title,
+            version=VERSION,
+            description=description,
+            routes=routes,
+            servers=[{"url": root_path}],
+        )
+        schema = apply_tenant_security(schema, tenant, root_path)
+        return JSONResponse(schema)
+
+    @app.get("/docs", include_in_schema=False)
+    async def tenant_docs(request: Request):
+        return _docs_html(
+            f"{prefix}/openapi.json",
+            f"{title} - docs",
+            scalar_authentication(request.state.tenant, str(request.url_for("tenant_docs_oauth2_redirect"))),
+        )
+
+    # DEPRECATED #44: landing page for the Swagger-era Keycloak redirect URI; remove in 2.0.0
+    @app.get("/docs/oauth2-redirect", include_in_schema=False)
+    async def tenant_docs_oauth2_redirect():
+        return HTMLResponse("<!doctype html>")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        favicon_path = os.path.join("app", "static", "favicon.ico")
+        return FileResponse(favicon_path)
 
 
 @asynccontextmanager
@@ -101,74 +184,8 @@ parent = FastAPI(
     openapi_url=None,
     redoc_url=None,
     lifespan=lifespan,
-    responses={
-        500: {"model": GwErrorResponse, "description": "Database function error"},
-        503: {"model": GwErrorResponse, "description": "Database unavailable"},
-    },
+    responses=_TENANT_RESPONSES,
 )
-
-tenant_app = FastAPI(
-    version=VERSION,
-    title=TITLE,
-    description=DESCRIPTION,
-    docs_url=None,
-    openapi_url=None,
-    redoc_url=None,
-    responses={
-        500: {"model": GwErrorResponse, "description": "Database function error"},
-        503: {"model": GwErrorResponse, "description": "Database unavailable"},
-    },
-)
-
-register_v1(tenant_app)
-
-
-@tenant_app.get("/", summary="Service status")
-async def tenant_root():
-    return {
-        "status": "Accepted",
-        "message": f"{TITLE} is running.",
-        "version": VERSION,
-        "description": DESCRIPTION,
-    }
-
-
-@tenant_app.get("/openapi.json", include_in_schema=False)
-async def tenant_openapi_json(request: Request):
-    tenant: Tenant = request.state.tenant
-    routes = tenant_openapi_routes(tenant_app, tenant)
-    root_path = request.scope.get("root_path") or TENANT_PREFIX
-    schema = get_openapi(
-        title=TITLE,
-        version=VERSION,
-        description=DESCRIPTION,
-        routes=routes,
-        servers=[{"url": root_path}],
-    )
-    schema = apply_tenant_security(schema, tenant, root_path)
-    return JSONResponse(schema)
-
-
-@tenant_app.get("/docs", include_in_schema=False)
-async def tenant_docs(request: Request):
-    return _docs_html(
-        f"{TENANT_PREFIX}/openapi.json",
-        f"{TITLE} - docs",
-        scalar_authentication(request.state.tenant, str(request.url_for("tenant_docs_oauth2_redirect"))),
-    )
-
-
-# DEPRECATED #44: landing page for the Swagger-era Keycloak redirect URI; remove in 2.0.0
-@tenant_app.get("/docs/oauth2-redirect", include_in_schema=False)
-async def tenant_docs_oauth2_redirect():
-    return HTMLResponse("<!doctype html>")
-
-
-@tenant_app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    favicon_path = os.path.join("app", "static", "favicon.ico")
-    return FileResponse(favicon_path)
-
 
 admin_app = FastAPI(
     title=f"{TITLE} - Admin",
@@ -192,31 +209,44 @@ async def admin_docs(_request: Request):
 # Plain route, same as FastAPI's built-in docs: stays outside verify_admin.
 admin_app.add_route("/docs", admin_docs, include_in_schema=False)
 
+VERSION_ROUTERS = {"v1": v1_router.ROUTERS, "v2": v2_router.ROUTERS}
+
+tenant_apps: dict[str, FastAPI] = {}
+for _version in API_VERSIONS:
+    _tenant_app = _create_tenant_app(_version)
+    include_routers(_tenant_app, VERSION_ROUTERS[_version])
+    _register_tenant_meta_routes(_tenant_app, _version)
+    tenant_apps[_version] = _tenant_app
+    parent.mount(TENANT_PREFIXES[_version], _tenant_app)
+
 parent.mount(ADMIN_PREFIX, admin_app)
-parent.mount(TENANT_PREFIX, tenant_app)
 parent.mount(STATIC_PREFIX, StaticFiles(directory="app/static"), name="static")
 
 _register_health_route(parent, GLOBAL_HEALTH_PATH)
-for _app in (tenant_app, admin_app):
-    _register_health_route(_app)
+_register_health_route(admin_app)
+for _tenant_app in tenant_apps.values():
+    _register_health_route(_tenant_app)
 
 
 # Middleware order: Starlette runs LIFO — register host_middleware first so it runs inner.
 parent.middleware("http")(host_middleware)
 parent.middleware("http")(request_logging_middleware)
 
-for _app in (parent, tenant_app, admin_app):
-    register_exception_handlers(_app)
+register_exception_handlers(parent)
+register_exception_handlers(admin_app)
+for _tenant_app in tenant_apps.values():
+    register_exception_handlers(_tenant_app)
 
-load_plugins(tenant_app)
+for _version, _tenant_app in tenant_apps.items():
+    load_plugins(_tenant_app, _version)
 
 mcp_runtime.configure(root_app=parent)
-tenant_app.add_api_route(
+tenant_apps["v1"].add_api_route(
     "/mcp",
     mcp_runtime.mcp_http_endpoint,
     methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
     include_in_schema=False,
 )
-tenant_app.mount("/mcp", mcp_runtime.mcp_dispatch)
+tenant_apps["v1"].mount("/mcp", mcp_runtime.mcp_dispatch)
 
 app = parent

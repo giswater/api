@@ -9,7 +9,7 @@ import logging
 import os
 import re
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Literal, Mapping
 
@@ -231,6 +231,8 @@ class TenantSettings:
     api_features: bool = False
     api_mcp: bool = False
     api_cmms: bool = False
+    api_v1: bool = True
+    api_v2: bool = False
     # Uploaded files. The API writes {dir}/{tenant_id}/{feature}/{id}/.
     files_dir: str = "data/files"
     files_max_upload_mb: int = 100
@@ -319,6 +321,9 @@ class TenantSettings:
         return role_name_set(getattr(self, cap.field))
 
 
+API_TOGGLES = tuple(field for field in fields(TenantSettings) if field.name.startswith("api_"))
+
+
 def _resolve_auth_mode(env: Mapping[str, str | None]) -> AuthMode:
     auth_mode_raw = (env.get("AUTH_MODE") or "").strip().lower()
     if auth_mode_raw in AUTH_MODES:
@@ -383,18 +388,7 @@ def _build_global(env: Mapping[str, str | None]) -> GlobalSettings:
 
 def _build_tenant(env: Mapping[str, str | None]) -> TenantSettings:
     return TenantSettings(
-        api_basic=_to_bool(env.get("API_BASIC"), False),
-        api_profile=_to_bool(env.get("API_PROFILE"), False),
-        api_flow=_to_bool(env.get("API_FLOW"), False),
-        api_mincut=_to_bool(env.get("API_MINCUT"), False),
-        api_water_balance=_to_bool(env.get("API_WATER_BALANCE"), False),
-        api_mapzones=_to_bool(env.get("API_MAPZONES"), False),
-        api_routing=_to_bool(env.get("API_ROUTING"), False),
-        api_crm=_to_bool(env.get("API_CRM"), False),
-        api_epa=_to_bool(env.get("API_EPA"), False),
-        api_features=_to_bool(env.get("API_FEATURES"), False),
-        api_mcp=_to_bool(env.get("API_MCP"), False),
-        api_cmms=_to_bool(env.get("API_CMMS"), False),
+        **{field.name: _to_bool(env.get(field.name.upper()), field.default) for field in API_TOGGLES},
         files_dir=((env.get("FILES_DIR") or "").strip() or "data/files"),
         files_max_upload_mb=_to_int(env.get("FILES_MAX_UPLOAD_MB"), 100),
         files_public_url=normalize_files_public_url(env.get("FILES_PUBLIC_URL")),

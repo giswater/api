@@ -32,9 +32,9 @@ def configure(*, root_app: ASGIApp) -> None:
 
 
 class TenantMcp:
-    def __init__(self, app: ASGIApp, api: Any | None = None):
+    def __init__(self, app: ASGIApp, apis: dict[str, Any] | None = None):
         self.app = app
-        self.api = api
+        self.apis = apis or {}
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -77,12 +77,12 @@ class TenantMcp:
             except Exception as exc:
                 logger.warning("MCP lifespan task failed: %s", exc)
             self._task = None
-        if self.api is not None:
+        for api in self.apis.values():
             try:
-                await self.api.aclose()
+                await api.aclose()
             except Exception as exc:
                 logger.warning("MCP httpx client close failed: %s", exc)
-            self.api = None
+        self.apis = {}
 
 
 async def get_or_create(tenant: Tenant | None) -> TenantMcp | None:
@@ -96,9 +96,9 @@ async def get_or_create(tenant: Tenant | None) -> TenantMcp | None:
     async with tenant.mcp_lock:
         if tenant.mcp is not None:
             return tenant.mcp
-        mcp, api = build_tenant_mcp(tenant, _root_app)
+        mcp, apis = build_tenant_mcp(tenant, _root_app)
         http_app = mcp.http_app(path="/", stateless_http=True)
-        entry = TenantMcp(http_app, api=api)
+        entry = TenantMcp(http_app, apis=apis)
         try:
             await entry.start()
         except Exception:

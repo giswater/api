@@ -176,6 +176,18 @@ class CmmsService:
             schema = self.ctx.schema
             raise HTTPException(status_code=404, detail=f"CMMS is not integrated for schema '{schema}'")
 
+    async def _require_cmms_views(self) -> None:
+        rows = await self._sql(
+            "SELECT c.relname AS name FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relkind = 'v' AND c.relname = ANY(%s)",
+            (self.ctx.schema, list(_CMMS_VIEWS)),
+        )
+        present = {row["name"] for row in rows if row.get("name")}
+        if not set(_CMMS_VIEWS).issubset(present):
+            schema = self.ctx.schema
+            raise HTTPException(status_code=404, detail=f"CMMS is not integrated for schema '{schema}'")
+
     async def _sql(self, query: str, parameters: tuple | None = None) -> list[dict]:
         # schema= validates the tenant project schema and fills {schema}.
         return await execute_sql(

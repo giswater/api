@@ -55,6 +55,7 @@ def _materialize_tenants_dir() -> str:
         "API_BASIC=true\nAPI_PROFILE=true\nAPI_FLOW=true\nAPI_MINCUT=true\n"
         "API_WATER_BALANCE=true\nAPI_MAPZONES=true\nAPI_ROUTING=true\n"
         "API_CRM=true\nAPI_EPA=true\nAPI_FEATURES=true\nAPI_CMMS=true\n"
+        "API_V2=true\n"
         f"FILES_DIR={os.environ['FILES_DIR']}\n"
         "FILES_MAX_UPLOAD_MB=2\n"
     )

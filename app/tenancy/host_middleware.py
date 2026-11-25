@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from . import state
 from ..core.config import global_settings
-from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIX
+from ..core.constants import ADMIN_PREFIX, GLOBAL_HEALTH_PATH, STATIC_PREFIX, TENANT_PREFIXES
 from .registry import RESERVED_IDS, TENANT_ID_RE
 
 
@@ -48,7 +48,15 @@ def _path_starts(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix + "/")
 
 
-def _resolve_tenant(request: Request, tid: str):
+def _api_version(path: str) -> str | None:
+    """Return the API version whose prefix matches ``path``, or None."""
+    for version, prefix in TENANT_PREFIXES.items():
+        if _path_starts(path, prefix):
+            return version
+    return None
+
+
+def _resolve_tenant(request: Request, tid: str, version: str):
     """Attach the loaded tenant or return an error response."""
     reg = state.registry
     if reg is None:
@@ -57,6 +65,8 @@ def _resolve_tenant(request: Request, tid: str):
     if tenant is None:
         return JSONResponse(status_code=404, content={"detail": f"Unknown tenant '{tid}'"})
     request.state.tenant = tenant
+    if not getattr(tenant.settings, f"api_{version}"):
+        return JSONResponse(status_code=404, content={"detail": "API version disabled"})
     return None
 
 
@@ -76,8 +86,9 @@ async def host_middleware(request: Request, call_next):  # noqa: C901
         if _path_starts(path, ADMIN_PREFIX):
             return await call_next(request)
 
-        if _path_starts(path, TENANT_PREFIX):
-            err = _resolve_tenant(request, single_tid)
+        version = _api_version(path)
+        if version is not None:
+            err = _resolve_tenant(request, single_tid, version)
             if err is not None:
                 return err
             return await call_next(request)
@@ -92,7 +103,8 @@ async def host_middleware(request: Request, call_next):  # noqa: C901
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         return await call_next(request)
 
-    if _path_starts(path, TENANT_PREFIX):
+    version = _api_version(path)
+    if version is not None:
         if apex:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
 
@@ -102,7 +114,7 @@ async def host_middleware(request: Request, call_next):  # noqa: C901
         if not _is_valid_tenant_id(tid):
             return JSONResponse(status_code=404, content={"detail": f"Invalid tenant id '{tid}'"})
 
-        err = _resolve_tenant(request, tid)
+        err = _resolve_tenant(request, tid, version)
         if err is not None:
             return err
         return await call_next(request)
